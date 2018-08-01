@@ -1,0 +1,5 @@
+experiment BCELoss SoftDiceLoss iou loss mAP
+u_resnet_50 0.1981 0.1012 0.8190 0.3001 0.7816
+u_resnet_34 0.1964 0.1007 0.8172 0.2979 0.7803
+u_resnet_152 0.2045 0.1020 0.8157 0.3072 0.7799
+u_resnet_18 0.2078 0.1006 0.8139 0.3089 0.7725
