@@ -3,19 +3,17 @@ import math
 import pathlib
 
 import torch
-from torch.nn import DataParallel, BCELoss
+from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
 from torch.optim import SGD, Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
-from sklearn.model_selection import KFold
 
 from ela import transformations, generator, random
 
 from nets.refine_net import RefineNet
-from metrics import iou, mean_iou, mAP
+from metrics import iou, mAP
 import datasets
 import utils
 import meters
@@ -40,8 +38,8 @@ class Model:
         self.net.load_state_dict(state_dict)
 
     def update_pbar(self, masks_predictions, masks_targets, pbar, average_meter, pbar_description):
-        average_meter.add('SoftDiceLoss', losses.SoftDiceLoss()(masks_predictions, masks_targets).item())
-        average_meter.add('BCELoss', BCELoss()(masks_predictions, masks_targets).item())
+        average_meter.add('SoftDiceLoss', losses.SoftDiceWithLogitsLoss()(masks_predictions, masks_targets).item())
+        average_meter.add('BCELoss', BCEWithLogitsLoss()(masks_predictions, masks_targets).item())
         average_meter.add('iou', iou(masks_predictions > 0.5, masks_targets.byte()))
         average_meter.add('mAP', mAP(masks_predictions > 0.5, masks_targets.byte()))
 
@@ -55,9 +53,24 @@ class Model:
 
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()
-        optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
-        lr_scheduler = StepLR(optimizer, 25, 0.1)
-        criterion = losses.SoftDiceBCELoss()
+        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        lr_scheduler = utils.DictLR(optimizer, steps={
+            0: 1e-4,
+            15: 1e-5,
+            20: 1e-6,
+            25: 1e-4,
+            30: 1e-5,
+            35: 1e-6,
+            40: 1e-4,
+            45: 1e-5,
+            50: 1e-6,
+            55: 1e-4,
+            63: 1e-5,
+            81: 1e-6,
+            89: 1e-7
+        })
+
+        criterion = losses.SoftDiceBCEWithLogitsLoss()
         epochs = 100
 
         transforms_train = generator.TransformationsGenerator([
@@ -73,7 +86,7 @@ class Model:
         train_dataloader = DataLoader(
             train_dataset,
             num_workers=10,
-            batch_size=32,
+            batch_size=64,
             shuffle=True
         )
 
@@ -81,7 +94,7 @@ class Model:
         val_dataloader = DataLoader(
             val_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=128
         )
 
         best_val_mAP = 0
@@ -92,9 +105,11 @@ class Model:
         for e in range(epochs):
             lr_scheduler.step()
 
+            average_meter_train = meters.AverageMeter()
+            average_meter_val = meters.AverageMeter()
+
             with tqdm(total=len(train_dataloader), leave=False) as pbar, torch.enable_grad():
                 net.train()
-                average_meter = meters.AverageMeter()
 
                 for images, masks_targets in train_dataloader:
                     masks_targets = masks_targets.to(gpu)
@@ -106,12 +121,11 @@ class Model:
                     optimizer.step()
                     optimizer.zero_grad()
 
-                    average_meter.add('loss', loss.item())
-                    self.update_pbar(masks_predictions, masks_targets, pbar, average_meter, 'Training epoch {}'.format(e))
+                    average_meter_train.add('loss', loss.item())
+                    self.update_pbar(masks_predictions, masks_targets, pbar, average_meter_train, 'Training epoch {}'.format(e))
 
             with tqdm(total=len(val_dataloader), leave=True) as pbar, torch.no_grad():
                 net.eval()
-                average_meter = meters.AverageMeter()
 
                 for images, masks_targets in val_dataloader:
                     masks_targets = masks_targets.to(gpu)
@@ -120,14 +134,18 @@ class Model:
                     loss = criterion(F.adaptive_avg_pool2d(masks_predictions, (101, 101)),
                                      F.adaptive_avg_pool2d(masks_targets, (101, 101)))
 
-                    average_meter.add('loss', loss.item())
-                    self.update_pbar(masks_predictions, masks_targets, pbar, average_meter, 'Validation epoch {}'.format(e))
+                    average_meter_val.add('loss', loss.item())
+                    self.update_pbar(masks_predictions, masks_targets, pbar, average_meter_val, 'Validation epoch {}'.format(e))
 
-                epoch_logger.add_epoch(average_meter.get_all())
-                if average_meter.get('mAP') > best_val_mAP:
-                    best_val_mAP = average_meter.get('mAP')
-                    best_stats = average_meter.get_all()
-                    self.save()
+            train_stats = {'train_' + k: v for k, v in average_meter_train.get_all().items()}
+            val_stats = {'val_' + k: v for k, v in average_meter_val.get_all().items()}
+            stats = {**train_stats, **val_stats}
+
+            epoch_logger.add_epoch(stats)
+            if average_meter_val.get('mAP') > best_val_mAP:
+                best_val_mAP = average_meter_val.get('mAP')
+                best_stats = stats
+                self.save()
 
         # Post training
         epoch_logger.save()
@@ -145,7 +163,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=128
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
@@ -154,7 +172,7 @@ class Model:
             for images, ids in test_dataloader:
                 images = images.to(gpu)
                 masks_predictions = net(images)
-                masks_predictions = F.adaptive_avg_pool2d(masks_predictions, (101, 101))
+                masks_predictions = F.sigmoid(F.adaptive_avg_pool2d(masks_predictions, (101, 101)))
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()
@@ -166,13 +184,11 @@ if __name__ == "__main__":
     file_name = os.path.basename(__file__).split('.')[0]
     name = str(file_name)
 
-    rs = KFold(n_splits=5, shuffle=True, random_state=0)
-    samples = utils.get_train_samples()
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (train_index, val_index) in enumerate(rs.split(samples)):
+    for i, (samples_train, samples_val) in enumerate(utils.k_fold()):
         model = Model(name, i)
-        validation_stats = model.train(samples[train_index], samples[val_index])
+        validation_stats = model.train(samples_train, samples_val)
         experiment_logger.set_split(i, validation_stats)
 
         model.load()
@@ -183,15 +199,5 @@ if __name__ == "__main__":
             test_predictions.add_samples(predictions, ids)
 
         test_predictions.save()
-
-        """
-        submission = utils.Submission(name)
-
-        samples_test = utils.get_test_samples()
-        for predictions, ids in model.test(samples_test):
-            submission.add_samples(predictions > 0.5, ids)
-
-        submission.save()
-        """
 
     experiment_logger.save()

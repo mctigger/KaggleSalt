@@ -1,7 +1,8 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import BCELoss
-
+from torch.nn import BCELoss, BCEWithLogitsLoss
+import loss_lovasz
 
 class SoftDiceBCELoss(nn.Module):
     def __init__(self):
@@ -14,19 +15,54 @@ class SoftDiceBCELoss(nn.Module):
         return self.bce(prediction, target) + self.dice(prediction, target)
 
 
-# from https://github.com/asanakoy/kaggle_carvana_segmentation/blob/master/asanakoy/losses.py
-class BCELoss2d(nn.Module):
-    """
-    Binary Cross Entropy loss function
-    """
+class SoftDiceBCEWithLogitsLoss(nn.Module):
     def __init__(self):
-        super(BCELoss2d, self).__init__()
-        self.bce_loss = nn.BCEWithLogitsLoss()
+        super(SoftDiceBCEWithLogitsLoss, self).__init__()
 
-    def forward(self, logits, labels):
-        logits_flat = logits.view(-1)
-        labels_flat = labels.view(-1)
-        return self.bce_loss(logits_flat, labels_flat)
+        self.dice = SoftDiceWithLogitsLoss()
+        self.bce = BCEWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        return self.bce(prediction, target) + self.dice(prediction, target)
+
+
+class LovaszBCEWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(LovaszBCEWithLogitsLoss, self).__init__()
+
+        self.bce = BCEWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        return self.bce(prediction, target) + loss_lovasz.lovasz_hinge(prediction, target, per_image=True)
+
+
+class SoftDicePerImageBCEWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(SoftDicePerImageBCEWithLogitsLoss, self).__init__()
+
+        self.dice = SoftDicePerImageWithLogitsLoss()
+        self.bce = BCEWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        return self.bce(prediction, target) + self.dice(prediction, target)
+
+
+class SoftDiceWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(SoftDiceWithLogitsLoss, self).__init__()
+        self.dice = SoftDiceLoss()
+
+    def forward(self, prediction, target):
+        return self.dice(F.sigmoid(prediction), target)
+
+
+class SoftDicePerImageWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(SoftDicePerImageWithLogitsLoss, self).__init__()
+        self.dice = SoftDicePerImageLoss()
+
+    def forward(self, prediction, target):
+        return self.dice(F.sigmoid(prediction), target)
 
 
 class SoftDiceLoss(nn.Module):
@@ -41,6 +77,25 @@ class SoftDiceLoss(nn.Module):
         intersection = (iflat * tflat).sum()
 
         return 1 - ((2. * intersection + smooth) / (iflat.sum() + tflat.sum() + smooth))
+
+
+class SoftDicePerImageLoss(nn.Module):
+    def __init__(self):
+        super(SoftDicePerImageLoss, self).__init__()
+
+    def forward(self, prediction, target):
+        smooth = 1.0
+        batch_size = prediction.size(0)
+
+        iflat = prediction.view(batch_size, -1)
+        tflat = target.view(batch_size, -1)
+        intersection = (iflat * tflat).sum(dim=1)
+
+        a = 1 - ((2. * intersection + smooth) / (iflat.sum(dim=1) + tflat.sum(dim=1) + smooth))
+
+        print(a)
+
+        return torch.mean(a)
 
 
 class DiceScore(nn.Module):

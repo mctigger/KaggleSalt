@@ -10,7 +10,7 @@ class RCU(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(RCU, self).__init__()
         self.relu = nn.ReLU()
-        self.conv_1 = conv_3x3(in_channels, out_channels)
+        self.conv_1 = conv_3x3(in_channels, out_channels, bias=True)
         self.conv_2 = conv_3x3(out_channels, out_channels)
 
     def forward(self, residual):
@@ -23,26 +23,27 @@ class RCU(nn.Module):
 
 
 class MrF(nn.Module):
-    def __init__(self, channels, low_channel_multiplier=2, low_scale_factor=2, high_scale_factor=1):
+    def __init__(self, channels, scale_factors):
         super(MrF, self).__init__()
-        self.high_scale_factor = high_scale_factor
+        
+        paths = []
+        for s in scale_factors:
+            paths.append(nn.Sequential(
+                conv_3x3(channels, channels),
+                nn.Upsample(scale_factor=s, mode='bilinear')
+            ))
 
-        self.conv_high = conv_3x3(channels, channels)
-        self.conv_low = conv_3x3(low_channel_multiplier * channels, channels)
+        self.paths = nn.ModuleList(paths)
 
-        if high_scale_factor > 1:
-            self.upsample_high = nn.Upsample(scale_factor=high_scale_factor)
+    def forward(self, inputs):
+        sum = None
+        for inp, path in zip(inputs, self.paths):
+            if sum is None:
+                sum = path(inp)
+            else:
+                sum = sum + path(inp)
 
-        self.upsample_low = nn.Upsample(scale_factor=low_scale_factor)
-
-    def forward(self, low, high):
-        high = self.conv_high(high)
-        if self.high_scale_factor > 1:
-            high = self.upsample_high(high)
-        low = self.conv_low(low)
-        low = self.upsample_low(low)
-
-        return low + high
+        return sum
 
 
 class CRP(nn.Module):
@@ -73,22 +74,26 @@ class CRP(nn.Module):
 
 
 class RefineNetBlock(nn.Module):
-    def __init__(self, channels, low_channel_multiplier=2, low_scale_factor=2, high_scale_factor=1):
+    def __init__(self, channels, config):
         super(RefineNetBlock, self).__init__()
-        self.rcu_low_1 = RCU(channels * low_channel_multiplier, channels * low_channel_multiplier)
-        self.rcu_low_2 = RCU(channels * low_channel_multiplier, channels * low_channel_multiplier)
-        self.rcu_high_1 = RCU(channels, channels)
-        self.rcu_high_2 = RCU(channels, channels)
-        self.mrf = MrF(channels, low_channel_multiplier, low_scale_factor, high_scale_factor)
+        paths = []
+        for in_channels, scale_factor in config:
+            p = nn.Sequential(*[
+                nn.Conv2d(in_channels, channels, kernel_size=1, stride=1, padding=0, bias=False),
+                RCU(channels, channels),
+                RCU(channels, channels)
+            ])
+            paths.append(p)
+
+        self.paths = nn.ModuleList(paths)
+
+        self.mrf = MrF(channels, [scale_factor for in_channels, scale_factor in config])
         self.crp = CRP(channels)
         self.out = RCU(channels, channels)
 
-    def forward(self, low, high):
-        low = self.rcu_low_1(low)
-        low = self.rcu_low_2(low)
-        high = self.rcu_high_1(high)
-        high = self.rcu_high_2(high)
-        x = self.mrf(low, high)
+    def forward(self, inputs):
+        paths = [path(inp) for inp, path in zip(inputs, self.paths)]
+        x = self.mrf(paths)
         x = self.crp(x)
         x = self.out(x)
 
@@ -96,17 +101,18 @@ class RefineNetBlock(nn.Module):
 
 
 class RefineNet(nn.Module):
-    def __init__(self, resnet):
+    def __init__(self, resnet, num_features=256, block_multiplier=4):
         super(RefineNet, self).__init__()
 
-        self.refine_0 = RefineNetBlock(64, low_channel_multiplier=4, low_scale_factor=2, high_scale_factor=2)
-        self.refine_1 = RefineNetBlock(256)
-        self.refine_2 = RefineNetBlock(512)
-        self.refine_3 = RefineNetBlock(1024)
+        self.refine_0 = RefineNetBlock(num_features*2, [(block_multiplier*512, 1)])
+        self.refine_1 = RefineNetBlock(num_features, [(block_multiplier*256, 1), (num_features*2, 2)])
+        self.refine_2 = RefineNetBlock(num_features, [(block_multiplier*128, 1), (num_features, 2)])
+        self.refine_3 = RefineNetBlock(num_features, [(block_multiplier*64, 1), (num_features, 2)])
 
         self.classifier = nn.Sequential(*[
-            nn.Conv2d(64, 1, kernel_size=1, bias=True),
-            nn.Sigmoid()
+            RCU(num_features, num_features),
+            RCU(num_features, num_features),
+            nn.Conv2d(num_features, 1, kernel_size=1, bias=True)
         ])
 
         self.resnet = resnet
@@ -115,19 +121,19 @@ class RefineNet(nn.Module):
         x = self.resnet.conv1(x)
         x = self.resnet.bn1(x)
         x = self.resnet.relu(x)
-        x_0 = x = self.resnet.maxpool(x)
+        x = self.resnet.maxpool(x)
 
-        x_1 = x = self.resnet.layer1(x)
-        x_2 = x = self.resnet.layer2(x)
-        x_3 = x = self.resnet.layer3(x)
-        x = self.resnet.layer4(x)
+        x_0 = self.resnet.layer1(x)
+        x_1 = self.resnet.layer2(x_0)
+        x_2 = self.resnet.layer3(x_1)
+        x_3 = self.resnet.layer4(x_2)
 
-        x = self.refine_3(x, x_3)
-        x = self.refine_2(x, x_2)
-        x = self.refine_1(x, x_1)
-        x = self.refine_0(x, x_0)
+        x = self.refine_0([x_3])
+        x = self.refine_1([x_2, x])
+        x = self.refine_2([x_1, x])
+        x = self.refine_3([x_0, x])
 
         x = self.classifier(x)
+        x = F.upsample(x, scale_factor=4, mode='bilinear')
 
-        return F.upsample(x, scale_factor=2, mode='bilinear')
-
+        return x

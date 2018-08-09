@@ -4,7 +4,7 @@ from tqdm import tqdm
 import utils
 
 
-name = 'u_resnet_18'
+name = 'refine_net_50_bn_augmentations_lovasz_long_training'
 
 predictions_splits = []
 for i in range(4, 5):

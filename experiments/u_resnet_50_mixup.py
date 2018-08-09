@@ -3,10 +3,9 @@ import math
 import pathlib
 
 import torch
-from torch.nn import DataParallel, BCELoss
+from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
 from torch.optim import SGD, Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
@@ -14,7 +13,7 @@ from tqdm import tqdm
 from ela import transformations, generator, random
 
 from nets.u_resnet import BottleneckUResNet
-from metrics import iou, mean_iou, mAP
+from metrics import iou, mAP
 import datasets
 import utils
 import meters
@@ -39,8 +38,8 @@ class Model:
         self.net.load_state_dict(state_dict)
 
     def update_pbar(self, masks_predictions, masks_targets, pbar, average_meter, pbar_description):
-        average_meter.add('SoftDiceLoss', losses.SoftDiceLoss()(masks_predictions, masks_targets).item())
-        average_meter.add('BCELoss', BCELoss()(masks_predictions, masks_targets).item())
+        average_meter.add('SoftDiceLoss', losses.SoftDiceWithLogitsLoss()(masks_predictions, masks_targets).item())
+        average_meter.add('BCELoss', BCEWithLogitsLoss()(masks_predictions, masks_targets).item())
         average_meter.add('iou', iou(masks_predictions > 0.5, masks_targets.byte()))
         average_meter.add('mAP', mAP(masks_predictions > 0.5, masks_targets.byte()))
 
@@ -55,7 +54,7 @@ class Model:
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, steps={
+        lr_scheduler = utils.DictLR(optimizer, steps={
             0: 1e-4,
             15: 1e-5,
             20: 1e-6,
@@ -65,10 +64,14 @@ class Model:
             40: 1e-4,
             45: 1e-5,
             50: 1e-6,
+            55: 1e-4,
+            63: 1e-5,
+            81: 1e-6,
+            89: 1e-7
         })
 
-        criterion = losses.SoftDiceBCELoss()
-        epochs = 60
+        criterion = losses.SoftDiceBCEWithLogitsLoss()
+        epochs = 100
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
@@ -98,7 +101,8 @@ class Model:
         best_stats = None
         epoch_logger = utils.EpochLogger(name + '-split_{}'.format(self.split))
 
-        mixup = utils.MixUp(alpha=0.4)
+        mixup = utils.MixUp(0.2)
+
         # Training
         for e in range(epochs):
             lr_scheduler.step()
@@ -162,7 +166,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=128
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
@@ -171,7 +175,7 @@ class Model:
             for images, ids in test_dataloader:
                 images = images.to(gpu)
                 masks_predictions = net(images)
-                masks_predictions = F.adaptive_avg_pool2d(masks_predictions, (101, 101))
+                masks_predictions = F.sigmoid(F.adaptive_avg_pool2d(masks_predictions, (101, 101)))
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()
