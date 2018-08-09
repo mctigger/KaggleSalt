@@ -67,7 +67,7 @@ class Model:
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
             ),
-            random.RandomDistortion(4, 4, 0.5, 0.5, **utils.transformations_options),
+            random.RandomDistortion(5, 5, 0.25, 0.25, **utils.transformations_options),
             transformations.Resize((128, 128), **utils.transformations_options),
         ])
 
