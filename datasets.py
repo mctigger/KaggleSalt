@@ -8,10 +8,11 @@ from skimage import img_as_float
 
 
 class ImageDataset(Dataset):
-    def __init__(self, samples, path, transforms, test=False):
+    def __init__(self, samples, path, transforms, transforms_image=None, test=False):
         self.samples = samples
         self.path = path
         self.transforms = transforms
+        self.transforms_image = transforms_image
         self.test = test
 
     def __len__(self):
@@ -25,6 +26,11 @@ class ImageDataset(Dataset):
         t = next(self.transforms)
 
         image = t(image)
+
+        if self.transforms_image:
+            t_image = next(self.transforms_image)
+            image = t_image(image)
+
         image = ToTensor()(image).float()
 
         if self.test:
@@ -38,17 +44,24 @@ class ImageDataset(Dataset):
 
 
 class SemiSupervisedImageDataset(Dataset):
-    def __init__(self, samples, path, transforms, size):
+    def __init__(self, samples, path, transforms, size, momentum=0, test_predictions=None):
         self.samples = samples
         self.path = path
         self.transforms = transforms
         self.size = size
-        self.masks = {}
+        self.momentum = momentum
+        self.mask_predictions = {}
+
+        if test_predictions:
+            self.mask_predictions = test_predictions
 
     def set_masks(self, test_predictions):
         for predictions, ids in test_predictions:
             for p, id in zip(predictions, ids):
-                self.masks[id] = p
+                if id in self.mask_predictions:
+                    self.mask_predictions[id] = (1 - self.momentum) * self.mask_predictions[id] + self.momentum * p
+                else:
+                    self.mask_predictions[id] = p
 
     def __len__(self):
         return self.size
@@ -63,58 +76,8 @@ class SemiSupervisedImageDataset(Dataset):
         image = t(image)
         image = ToTensor()(image).float()
 
-        mask = self.masks[id]
+        mask = self.mask_predictions[id] > 0.5
         mask = t(mask)
         mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
 
         return image, mask
-
-
-# Imgaug datasets
-class ImageAugTrainDataset(Dataset):
-    def __init__(self, samples, path, transforms, test=False):
-        super(ImageAugTrainDataset, self).__init__()
-        self.samples = samples
-        self.path = path
-        self.transforms = transforms
-        self.test = test
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, index):
-        id = self.samples[index]
-
-        image = imread(join(self.path, 'images', id) + '.png')
-        mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
-
-        print(image.dtype, mask.dytpe, mask.shape)
-
-        image, mask = self.transforms.augment_images([image, mask])
-
-        mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
-        image = ToTensor()(image).float()
-
-        return image, mask
-
-
-class ImageAugTestDataset(Dataset):
-    def __init__(self, samples, path, transforms, test=False):
-        super(ImageAugTestDataset, self).__init__()
-        self.samples = samples
-        self.path = path
-        self.transforms = transforms
-        self.test = test
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, index):
-        id = self.samples[index]
-
-        image = imread(join(self.path, 'images', id) + '.png')
-
-        image = self.transforms.augment_images([image])[0]
-        image = ToTensor()(image).float()
-
-        return image, id

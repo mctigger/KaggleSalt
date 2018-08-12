@@ -97,7 +97,7 @@ class Model:
 
             if e > 70:
                 pseudo_dataset = datasets.SemiSupervisedImageDataset(test_samples, './data/test', transforms_train,
-                                                                     size=int(len(train_dataset) / 4 * (e - 70 / 50)))
+                                                                     size=int(len(train_dataset) / 4 * ((e - 70) / 50)))
                 train_pseudo_dataloader = DataLoader(
                     ConcatDataset([pseudo_dataset, train_dataset]),
                     num_workers=10,

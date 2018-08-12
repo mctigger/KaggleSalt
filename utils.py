@@ -140,7 +140,8 @@ class TestPredictions:
         np.savez(os.path.join('./predictions', self.mode, self.name), **self.predictions)
 
     def load(self):
-        self.predictions = np.load(os.path.join('./predictions', self.mode, self.name) + '.npz')
+        predictions = np.load(os.path.join('./predictions', self.mode, self.name) + '.npz')
+        self.predictions = {id: predictions[id] for id in tqdm(predictions, leave=False, desc='Loading predictions for {}'.format(self.name))}
         return self.predictions
 
 

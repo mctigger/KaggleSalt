@@ -6,6 +6,7 @@ import torch
 from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
 from torch.optim import SGD, Adam
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
@@ -54,32 +55,18 @@ class Model:
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.DictLR(optimizer, steps={
-            0: 1e-4,
-            15: 1e-5,
-            20: 1e-6,
-            25: 1e-4,
-            30: 1e-5,
-            35: 1e-6,
-            40: 1e-4,
-            45: 1e-5,
-            50: 1e-6,
-            55: 1e-4,
-            63: 1e-5,
-            81: 1e-6,
-            89: 1e-7
-        })
+        lr_scheduler = StepLR(optimizer, step_size=40, gamma=0.1)
 
         criterion = losses.SoftDiceBCEWithLogitsLoss()
         epochs = 100
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
-            transformations.Resize((128, 128)),
+            transformations.Resize((128, 128), **utils.transformations_options),
         ])
 
         transforms_val = generator.TransformationsGenerator([
-            transformations.Resize((128, 128)),
+            transformations.Resize((128, 128), **utils.transformations_options),
         ])
 
         train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
@@ -156,7 +143,7 @@ class Model:
         net = DataParallel(self.net).cuda()
 
         transforms = generator.TransformationsGenerator([
-            transformations.Resize((128, 128))
+            transformations.Resize((128, 128), **utils.transformations_options)
         ])
 
         test_dataset = datasets.ImageDataset(samples_test, './data/test', transforms, test=True)

@@ -65,7 +65,7 @@ class CRP(nn.Module):
 
 
 class RefineNetBlock(nn.Module):
-    def __init__(self, channels, config):
+    def __init__(self, channels, config, crp=CRP):
         super(RefineNetBlock, self).__init__()
         paths = []
         for in_channels, scale_factor in config:
@@ -79,7 +79,7 @@ class RefineNetBlock(nn.Module):
         self.paths = nn.ModuleList(paths)
 
         self.mrf = MrF(channels, [scale_factor for in_channels, scale_factor in config])
-        self.crp = CRP(channels)
+        self.crp = crp(channels)
         self.out = RCU(channels, channels)
 
     def forward(self, inputs):
@@ -92,13 +92,13 @@ class RefineNetBlock(nn.Module):
 
 
 class RefineNet(nn.Module):
-    def __init__(self, encoder, num_features=256, block_multiplier=4):
+    def __init__(self, encoder, num_features=256, block_multiplier=4, crp=CRP):
         super(RefineNet, self).__init__()
 
-        self.refine_0 = RefineNetBlock(num_features*2, [(block_multiplier*512, 1)])
-        self.refine_1 = RefineNetBlock(num_features, [(block_multiplier*256, 1), (num_features*2, 2)])
-        self.refine_2 = RefineNetBlock(num_features, [(block_multiplier*128, 1), (num_features, 2)])
-        self.refine_3 = RefineNetBlock(num_features, [(block_multiplier*64, 1), (num_features, 2)])
+        self.refine_0 = RefineNetBlock(num_features*2, [(block_multiplier*512, 1)], crp=crp)
+        self.refine_1 = RefineNetBlock(num_features, [(block_multiplier*256, 1), (num_features*2, 2)], crp=crp)
+        self.refine_2 = RefineNetBlock(num_features, [(block_multiplier*128, 1), (num_features, 2)], crp=crp)
+        self.refine_3 = RefineNetBlock(num_features, [(block_multiplier*64, 1), (num_features, 2)], crp=crp)
 
         self.classifier = nn.Sequential(*[
             RCU(num_features, num_features),
@@ -156,3 +156,47 @@ class ResNeXtBase(nn.Module):
         self.layer2 = resnet.layer2
         self.layer3 = resnet.layer3
         self.layer4 = resnet.layer4
+
+
+class DilatedPyramidPooling(nn.Module):
+    def __init__(self, channels):
+        super(DilatedPyramidPooling, self).__init__()
+
+        self.conv_a = nn.Conv2d(channels, channels, kernel_size=1, padding=0)
+        self.conv_b_1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.conv_b_2 = nn.Conv2d(channels, channels, kernel_size=3, padding=2, dilation=2)
+        self.conv_c_1 = nn.Conv2d(channels, channels, kernel_size=5, padding=2)
+        self.conv_c_2 = nn.Conv2d(channels, channels, kernel_size=5, padding=4, dilation=2)
+
+    def forward(self, x):
+        a = self.conv_a(x)
+        b_1 = self.conv_b_1(x)
+        b_2 = self.conv_b_2(x)
+        c_1 = self.conv_c_1(x)
+        c_2 = self.conv_c_2(x)
+
+        return a + b_1 + b_2 + c_1 + c_2 + x
+
+
+class PyramidPooling(nn.Module):
+    def __init__(self, channels):
+        super(PyramidPooling, self).__init__()
+
+        self.conv_a = nn.Conv2d(channels, channels, kernel_size=1, padding=0)
+        self.conv_b = nn.Sequential(
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Upsample(scale_factor=2, mode='bilinear'),
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        )
+        self.conv_c = nn.Sequential(
+            nn.AvgPool2d(kernel_size=4, stride=4),
+            nn.Upsample(scale_factor=4, mode='bilinear'),
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        )
+
+    def forward(self, x):
+        a = self.conv_a(x)
+        b = self.conv_b(x)
+        c = self.conv_c(x)
+
+        return a + b + c + x
