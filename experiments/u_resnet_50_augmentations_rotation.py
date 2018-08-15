@@ -1,4 +1,5 @@
 import os
+import math
 import pathlib
 
 import torch
@@ -17,21 +18,13 @@ import datasets
 import utils
 import meters
 import losses
+import tta
 
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
 
-def tta_identity(img):
-    return img
-
-
-def tta_flip_forward(img):
-    return torch.flip(img, [3])
-
-
-def tta_flip_backward(mask):
-    return torch.flip(mask, [3])
+resize = transformations.Resize((128, 128), **utils.transformations_options)
 
 
 class Model:
@@ -39,6 +32,9 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(i))
         self.net = BottleneckUResNet(resnet.resnet50(pretrained=True), layers=[3, 4, 6, 3])
+        self.tta = [
+            (tta.identity, tta.identity)
+        ]
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -62,6 +58,17 @@ class Model:
 
         pbar.update()
 
+    def predict(self, net, images):
+        tta_masks = []
+        for tta_forward, tta_backward in self.tta:
+            masks_predictions = net(tta_forward(images))
+            tta_masks.append(tta_backward(masks_predictions))
+
+        tta_masks = torch.stack(tta_masks, dim=0)
+        masks_predictions = torch.mean(tta_masks, dim=0)
+
+        return masks_predictions
+
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
@@ -72,10 +79,18 @@ class Model:
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
-            transformations.NumpyCopy()
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
+                rotation=lambda rs: rs.randint(-10, 10),
+                **utils.transformations_options
+            ),
+            resize,
         ])
 
         transforms_val = generator.TransformationsGenerator([
+            resize,
         ])
 
         train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
@@ -109,9 +124,10 @@ class Model:
 
                 for images, masks_targets in train_dataloader:
                     masks_targets = masks_targets.to(gpu)
-                    masks_predictions = net(F.pad(images, (13, 14, 13, 14), mode='reflect'))[:, :, 13:128-14, 13:128-14]
+                    masks_predictions = net(images)
 
-                    loss = criterion(masks_predictions, masks_targets)
+                    loss = criterion(F.adaptive_avg_pool2d(masks_predictions, (101, 101)),
+                                     F.adaptive_avg_pool2d(masks_targets, (101, 101)))
                     loss.backward()
                     optimizer.step()
                     optimizer.zero_grad()
@@ -122,22 +138,12 @@ class Model:
             with tqdm(total=len(val_dataloader), leave=True) as pbar, torch.no_grad():
                 net.eval()
 
-                tta = [
-                    (tta_identity, tta_identity)
-                ]
-
                 for images, masks_targets in val_dataloader:
                     masks_targets = masks_targets.to(gpu)
+                    masks_predictions = self.predict(net, images)
 
-                    tta_masks = []
-                    for tta_forward, tta_backward in tta:
-                        masks_predictions = net(F.pad(tta_forward(images), (13, 14, 13, 14), mode='reflect'))[:, :, 13:128 - 14, 13:128 - 14]
-                        tta_masks.append(tta_backward(masks_predictions))
-
-                    tta_masks = torch.stack(tta_masks, dim=0)
-                    masks_predictions = torch.mean(tta_masks, dim=0)
-
-                    loss = criterion(masks_predictions, masks_targets)
+                    loss = criterion(F.adaptive_avg_pool2d(masks_predictions, (101, 101)),
+                                     F.adaptive_avg_pool2d(masks_targets, (101, 101)))
 
                     average_meter_val.add('loss', loss.item())
                     self.update_pbar(masks_predictions, masks_targets, pbar, average_meter_val, 'Validation epoch {}'.format(e))
@@ -157,13 +163,14 @@ class Model:
 
         return best_stats
 
-    def test(self, samples_test):
+    def test(self, samples_test, dir_test='./data/test'):
         net = DataParallel(self.net).cuda()
 
         transforms = generator.TransformationsGenerator([
+            resize
         ])
 
-        test_dataset = datasets.ImageDataset(samples_test, './data/test', transforms, test=True)
+        test_dataset = datasets.ImageDataset(samples_test, dir_test, transforms, test=True)
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
@@ -175,33 +182,41 @@ class Model:
 
             for images, ids in test_dataloader:
                 images = images.to(gpu)
-                masks_predictions = net(images)
-                masks_predictions = F.sigmoid(F.adaptive_avg_pool2d(masks_predictions, (101, 101)))
+                masks_predictions = self.predict(net, images)
+                masks_predictions = torch.sigmoid(F.adaptive_avg_pool2d(masks_predictions, (101, 101)))
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()
 
-                yield masks_predictions.cpu().squeeze().numpy(), ids
+                masks_predictions = masks_predictions.cpu().squeeze().numpy()
+
+                for p, id in zip(masks_predictions, ids):
+                    yield p, id
+
+
+file_name = os.path.basename(__file__).split('.')[0]
+name = str(file_name)
 
 
 if __name__ == "__main__":
-    file_name = os.path.basename(__file__).split('.')[0]
-    name = str(file_name)
-
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
         model = Model(name, i)
-        validation_stats = model.train(samples_train, samples_val)
-        experiment_logger.set_split(i, validation_stats)
+        stats = model.train(samples_train, samples_val)
+        experiment_logger.set_split(i, stats)
 
+        # Load the best performing checkpoint
         model.load()
-        test_predictions = utils.TestPredictions(name + '-split_{}'.format(i))
 
-        samples_test = utils.get_test_samples()
-        for predictions, ids in model.test(samples_test):
-            test_predictions.add_samples(predictions, ids)
-
+        # Predict the test data
+        test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
+        test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
+
+        # Predict the val data (for stacking)
+        val_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='val')
+        val_predictions.add_predictions(model.test(samples_val, dir_test='./data/train'))
+        val_predictions.save()
 
     experiment_logger.save()

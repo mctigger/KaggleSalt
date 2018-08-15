@@ -33,7 +33,6 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(i))
         self.net = BottleneckUResNet(resnet.resnet50(pretrained=True), layers=[3, 4, 6, 3])
         self.tta = [
-            (tta.flip_forward, tta.flip_backward),
             (tta.identity, tta.identity)
         ]
 

@@ -6,7 +6,7 @@ import torch
 from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
 from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torchvision.models import resnet
 from tqdm import tqdm
 
