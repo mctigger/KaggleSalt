@@ -129,7 +129,7 @@ class RefineNet(nn.Module):
         self.refine_2 = RefineNetBlock(num_features, [(block_multiplier*128, 1), (num_features, 2)], crp=crp)
         self.refine_3 = RefineNetBlock(num_features, [(block_multiplier*64, 1), (num_features, 2)], crp=crp)
 
-        self.classifier = classifier
+        self.classifier = classifier(num_features)
 
         self.encoder = encoder
 
