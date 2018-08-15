@@ -91,8 +91,37 @@ class RefineNetBlock(nn.Module):
         return x
 
 
+class RefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, num_features):
+        super(RefineNetUpsampleClassifier, self).__init__()
+        self.classifier = nn.Sequential(*[
+            RCU(num_features, num_features),
+            RCU(num_features, num_features),
+            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=4, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
+
+
+class RefineNetDetailedClassifier(nn.Module):
+    def __init__(self, num_features):
+        super(RefineNetDetailedClassifier, self).__init__()
+        self.classifier = nn.Sequential(*[
+            RCU(num_features, num_features),
+            nn.Upsample(scale_factor=2, mode='bilinear'),
+            RCU(num_features, num_features),
+            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=2, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
+
+
 class RefineNet(nn.Module):
-    def __init__(self, encoder, num_features=256, block_multiplier=4, crp=CRP):
+    def __init__(self, encoder, num_features=256, block_multiplier=4, crp=CRP, classifier=RefineNetUpsampleClassifier):
         super(RefineNet, self).__init__()
 
         self.refine_0 = RefineNetBlock(num_features*2, [(block_multiplier*512, 1)], crp=crp)
@@ -100,11 +129,7 @@ class RefineNet(nn.Module):
         self.refine_2 = RefineNetBlock(num_features, [(block_multiplier*128, 1), (num_features, 2)], crp=crp)
         self.refine_3 = RefineNetBlock(num_features, [(block_multiplier*64, 1), (num_features, 2)], crp=crp)
 
-        self.classifier = nn.Sequential(*[
-            RCU(num_features, num_features),
-            RCU(num_features, num_features),
-            nn.Conv2d(num_features, 1, kernel_size=1, bias=True)
-        ])
+        self.classifier = classifier
 
         self.encoder = encoder
 
@@ -121,7 +146,6 @@ class RefineNet(nn.Module):
         x = self.refine_3([x_0, x])
 
         x = self.classifier(x)
-        x = F.upsample(x, scale_factor=4, mode='bilinear')
 
         return x
 

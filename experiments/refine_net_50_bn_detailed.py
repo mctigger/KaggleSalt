@@ -5,14 +5,14 @@ import pathlib
 import torch
 from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
-from torch.optim import Adam
+from torch.optim import SGD, Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.u_resnet import BottleneckUResNet
+from nets.refine_net_bn import RefineNet, ResNetBase, RefineNetDetailedClassifier
 from metrics import iou, mAP
 import datasets
 import utils
@@ -23,23 +23,11 @@ cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
 
-def tta_identity(img):
-    return img
-
-
-def tta_flip_forward(img):
-    return torch.flip(img, [3])
-
-
-def tta_flip_backward(mask):
-    return torch.flip(mask, [3])
-
-
 class Model:
     def __init__(self, name, split):
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(i))
-        self.net = BottleneckUResNet(resnet.resnet50(pretrained=True), layers=[3, 4, 6, 3])
+        self.net = RefineNet(ResNetBase(resnet.resnet50(pretrained=True)), classifier=RefineNetDetailedClassifier)
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -66,7 +54,7 @@ class Model:
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 1e-4, 1e-6, 5)
+        lr_scheduler = utils.CyclicLR(optimizer, max_lr=1e-4, base_lr=1e-6, stepsize=5)
 
         criterion = losses.SoftDiceBCEWithLogitsLoss()
         epochs = 100
@@ -84,7 +72,7 @@ class Model:
         train_dataloader = DataLoader(
             train_dataset,
             num_workers=10,
-            batch_size=64,
+            batch_size=32,
             shuffle=True
         )
 
@@ -92,7 +80,7 @@ class Model:
         val_dataloader = DataLoader(
             val_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=64
         )
 
         best_val_mAP = 0
@@ -125,21 +113,9 @@ class Model:
             with tqdm(total=len(val_dataloader), leave=True) as pbar, torch.no_grad():
                 net.eval()
 
-                tta = [
-                    (tta_flip_forward, tta_flip_backward),
-                    (tta_identity, tta_identity)
-                ]
-
                 for images, masks_targets in val_dataloader:
                     masks_targets = masks_targets.to(gpu)
-
-                    tta_masks = []
-                    for tta_forward, tta_backward in tta:
-                        masks_predictions = net(tta_forward(images))
-                        tta_masks.append(tta_backward(masks_predictions))
-
-                    tta_masks = torch.stack(tta_masks, dim=0)
-                    masks_predictions = torch.mean(tta_masks, dim=0)
+                    masks_predictions = net(images)
 
                     loss = criterion(F.adaptive_avg_pool2d(masks_predictions, (101, 101)),
                                      F.adaptive_avg_pool2d(masks_targets, (101, 101)))
@@ -162,18 +138,18 @@ class Model:
 
         return best_stats
 
-    def test(self, samples_test, dir_test='./data/test'):
+    def test(self, samples_test):
         net = DataParallel(self.net).cuda()
 
         transforms = generator.TransformationsGenerator([
             transformations.Resize((128, 128), **utils.transformations_options)
         ])
 
-        test_dataset = datasets.ImageDataset(samples_test, dir_test, transforms, test=True)
+        test_dataset = datasets.ImageDataset(samples_test, './data/test', transforms, test=True)
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=64
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
