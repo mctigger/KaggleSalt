@@ -75,7 +75,7 @@ class Model:
         lr_scheduler = utils.CyclicLR(optimizer, 1e-4, 1e-6, 5)
 
         criterion = losses.SoftDiceBCEWithLogitsLoss()
-        epochs = 100
+        epochs = 150
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
