@@ -1,5 +1,4 @@
 import os
-import math
 import pathlib
 
 import torch
@@ -21,6 +20,18 @@ import losses
 
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
+
+
+def tta_identity(img):
+    return img
+
+
+def tta_flip_forward(img):
+    return torch.flip(img, [3])
+
+
+def tta_flip_backward(mask):
+    return torch.flip(mask, [3])
 
 
 class Model:
@@ -54,18 +65,17 @@ class Model:
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 1e-6, 1e-4, 5)
+        lr_scheduler = utils.CyclicLR(optimizer, 1e-4, 1e-6, 5)
 
         criterion = losses.SoftDiceBCEWithLogitsLoss()
         epochs = 100
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
-            transformations.Resize((128, 128)),
+            transformations.NumpyCopy()
         ])
 
         transforms_val = generator.TransformationsGenerator([
-            transformations.Resize((128, 128)),
         ])
 
         train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
@@ -99,10 +109,9 @@ class Model:
 
                 for images, masks_targets in train_dataloader:
                     masks_targets = masks_targets.to(gpu)
-                    masks_predictions = net(images)
+                    masks_predictions = net(F.pad(images, (13, 14, 13, 14), mode='reflect'))[:, :, 13:128-14, 13:128-14]
 
-                    loss = criterion(F.adaptive_avg_pool2d(masks_predictions, (101, 101)),
-                                     F.adaptive_avg_pool2d(masks_targets, (101, 101)))
+                    loss = criterion(masks_predictions, masks_targets)
                     loss.backward()
                     optimizer.step()
                     optimizer.zero_grad()
@@ -113,12 +122,22 @@ class Model:
             with tqdm(total=len(val_dataloader), leave=True) as pbar, torch.no_grad():
                 net.eval()
 
+                tta = [
+                    (tta_identity, tta_identity)
+                ]
+
                 for images, masks_targets in val_dataloader:
                     masks_targets = masks_targets.to(gpu)
-                    masks_predictions = net(images)
 
-                    loss = criterion(F.adaptive_avg_pool2d(masks_predictions, (101, 101)),
-                                     F.adaptive_avg_pool2d(masks_targets, (101, 101)))
+                    tta_masks = []
+                    for tta_forward, tta_backward in tta:
+                        masks_predictions = net(F.pad(tta_forward(images), (13, 14, 13, 14), mode='reflect'))[:, :, 13:128 - 14, 13:128 - 14]
+                        tta_masks.append(tta_backward(masks_predictions))
+
+                    tta_masks = torch.stack(tta_masks, dim=0)
+                    masks_predictions = torch.mean(tta_masks, dim=0)
+
+                    loss = criterion(masks_predictions, masks_targets)
 
                     average_meter_val.add('loss', loss.item())
                     self.update_pbar(masks_predictions, masks_targets, pbar, average_meter_val, 'Validation epoch {}'.format(e))
@@ -142,7 +161,6 @@ class Model:
         net = DataParallel(self.net).cuda()
 
         transforms = generator.TransformationsGenerator([
-            transformations.Resize((128, 128))
         ])
 
         test_dataset = datasets.ImageDataset(samples_test, './data/test', transforms, test=True)

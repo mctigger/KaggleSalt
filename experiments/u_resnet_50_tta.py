@@ -126,6 +126,7 @@ class Model:
                 net.eval()
 
                 tta = [
+                    (tta_flip_forward, tta_flip_backward),
                     (tta_identity, tta_identity)
                 ]
 
