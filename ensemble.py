@@ -4,33 +4,49 @@ from tqdm import tqdm
 import utils
 
 
-name = 'u_resnet_50_pseudo_labeling_3_augmentations'
+def ensemble_mean(p):
+    return np.mean(p.reshape(-1, *p.shape[:2]), axis=0)
 
-predictions_splits = []
-for i in range(0, 5):
-    test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
-    predictions_splits.append(test_predictions.load())
+
+def ensemble_vote(p):
+    return np.mean(-1, *p.shape[:2] > 0.5, axis=0)
+
+
+experiments = ['u_resnet_50_pseudo_labeling_3_augmentations']
+
+test_predictions_experiment = []
+
+for name in experiments:
+    test_predictions_split = []
+    for i in range(0, 5):
+        test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
+        test_predictions_split.append(test_predictions.load())
+    test_predictions_experiment.append(test_predictions_split)
 
 test_samples = utils.get_test_samples()
 
 predictions_mean = []
 for id in tqdm(test_samples):
-    predictions_id = [predictions[id] for predictions in predictions_splits]
-    prediction_mean = np.mean(np.stack(predictions_id, axis=0), axis=0)
-    predictions_mean.append((id, prediction_mean))
+    # p = n_models x h x w
+
+    p = []
+    for test_predictions_split in test_predictions_experiment:
+        test_predictions_split = np.stack([predictions[id] for predictions in test_predictions_split])
+        p.append(test_predictions_split)
+    p = np.stack(p, axis=0)
+
+    prediction_ensemble = ensemble_mean(p)
+    predictions_mean.append((prediction_ensemble, id))
 
 # Save ensembled predictions (for example for pseudo-labeling)
 ensemble_predictions = utils.TestPredictions(name)
-
-for id, p_mean in predictions_mean:
-    ensemble_predictions.add_sample(p_mean, id)
-
+ensemble_predictions.add_predictions(predictions_mean)
 ensemble_predictions.save()
 
 # Threshold for submission
-predictions_thresholded = [p > 0.5 for id, p in predictions_mean]
+predictions_thresholded = [p > 0.5 for p, id in predictions_mean]
 
 submission = utils.Submission(name)
 submission.add_samples(predictions_thresholded, test_samples)
-
 submission.save()
+

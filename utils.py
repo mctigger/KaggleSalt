@@ -124,10 +124,11 @@ class Submission:
 
 
 class TestPredictions:
-    def __init__(self, name, mode='test'):
+    def __init__(self, name, mode='test', dir='./predictions'):
         self.name = name
         self.mode = mode
         self.predictions = {}
+        self.dir = dir
 
     def add_sample(self, prediction, id):
         self.predictions[id] = prediction
@@ -136,11 +137,15 @@ class TestPredictions:
         for prediction, id in zip(masks, ids):
             self.predictions[id] = prediction
 
+    def add_predictions(self, predictions):
+        for prediction, id in predictions:
+            self.predictions[id] = prediction
+
     def save(self):
-        np.savez(os.path.join('./predictions', self.mode, self.name), **self.predictions)
+        np.savez(os.path.join(self.dir, self.mode, self.name), **self.predictions)
 
     def load(self):
-        predictions = np.load(os.path.join('./predictions', self.mode, self.name) + '.npz')
+        predictions = np.load(os.path.join(self.dir, self.mode, self.name) + '.npz')
         self.predictions = {id: predictions[id] for id in tqdm(predictions, leave=False, desc='Loading predictions for {}'.format(self.name))}
         return self.predictions
 
