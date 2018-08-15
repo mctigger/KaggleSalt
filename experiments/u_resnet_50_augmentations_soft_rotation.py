@@ -5,7 +5,7 @@ import pathlib
 import torch
 from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
-from torch.optim import SGD, Adam
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
@@ -54,35 +54,31 @@ class Model:
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.DictLR(optimizer, steps={
-            0: 1e-4,
-            15: 1e-5,
-            20: 1e-6,
-            25: 1e-4,
-            30: 1e-5,
-            35: 1e-6,
-            40: 1e-4,
-            45: 1e-5,
-            50: 1e-6,
-            55: 1e-4,
-            63: 1e-5,
-            81: 1e-6,
-            89: 1e-7
-        })
+        lr_scheduler = utils.CyclicLR(optimizer, 1e-6, 1e-4, 5)
 
-        criterion = losses.SoftDicePerImageWithLogitsLoss()
+        criterion = losses.SoftDiceBCEWithLogitsLoss()
         epochs = 100
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
-            transformations.Resize((128, 128)),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.9, 1.1), rs.uniform(0.9, 1.1)),
+                rotation=lambda rs: rs.randint(-10, 10),
+                **utils.transformations_options
+            ),
+            transformations.Resize((128, 128), **utils.transformations_options),
+        ])
+
+        transforms_train_image = generator.TransformationsGenerator([
         ])
 
         transforms_val = generator.TransformationsGenerator([
-            transformations.Resize((128, 128)),
+            transformations.Resize((128, 128), **utils.transformations_options),
         ])
 
-        train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
+        train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train, transforms_train_image)
         train_dataloader = DataLoader(
             train_dataset,
             num_workers=10,
@@ -156,7 +152,7 @@ class Model:
         net = DataParallel(self.net).cuda()
 
         transforms = generator.TransformationsGenerator([
-            transformations.Resize((128, 128))
+            transformations.Resize((128, 128), **utils.transformations_options)
         ])
 
         test_dataset = datasets.ImageDataset(samples_test, './data/test', transforms, test=True)
@@ -186,7 +182,7 @@ if __name__ == "__main__":
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.k_fold()):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
         model = Model(name, i)
         validation_stats = model.train(samples_train, samples_val)
         experiment_logger.set_split(i, validation_stats)

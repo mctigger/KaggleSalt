@@ -61,6 +61,12 @@ class Model:
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.9, 1.1), rs.uniform(0.9, 1.1)),
+                **utils.transformations_options
+            ),
             transformations.Resize((128, 128), **utils.transformations_options),
         ])
 

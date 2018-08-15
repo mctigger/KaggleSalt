@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.u_resnet import BottleneckUResNet
+from nets.refine_net_bn import RefineNet, ResNetBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -26,7 +26,7 @@ class Model:
     def __init__(self, name, split):
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(i))
-        self.net = BottleneckUResNet(resnet.resnet50(pretrained=True), layers=[3, 4, 6, 3])
+        self.net = RefineNet(ResNetBase(resnet.resnet50(pretrained=True)))
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -57,10 +57,16 @@ class Model:
         lr_scheduler = utils.CyclicLR(optimizer, 1e-6, 1e-4, 5)
 
         criterion = losses.SoftDiceBCEWithLogitsLoss()
-        epochs = 120
+        epochs = 200
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.9, 1.1), rs.uniform(0.9, 1.1)),
+                **utils.transformations_options
+            ),
             transformations.Resize((128, 128), **utils.transformations_options),
         ])
 
@@ -69,19 +75,27 @@ class Model:
         ])
 
         train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
-        train_dataloader = DataLoader(
-            train_dataset,
-            num_workers=10,
-            batch_size=64,
-            shuffle=True
+        pseudo_dataset = datasets.SemiSupervisedImageDataset(
+            test_samples,
+            './data/test',
+            transforms_train,
+            size=int(len(train_dataset) * 1 / 5),
+            test_predictions=utils.TestPredictions('refine_next_50_bn_augmentations_lovasz_long_training').load(),
+            momentum=0.25
         )
 
+        loader = DataLoader(
+            ConcatDataset([pseudo_dataset, train_dataset]),
+            num_workers=10,
+            batch_size=32,
+            shuffle=True
+        )
 
         val_dataset = datasets.ImageDataset(samples_val, './data/train', transforms_val)
         val_dataloader = DataLoader(
             val_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=64
         )
 
         best_val_mAP = 0
@@ -95,19 +109,8 @@ class Model:
             average_meter_train = meters.AverageMeter()
             average_meter_val = meters.AverageMeter()
 
-            if e > 70:
-                pseudo_dataset = datasets.SemiSupervisedImageDataset(test_samples, './data/test', transforms_train,
-                                                                     size=int(len(train_dataset) / 4 * ((e - 70) / 50)))
-                train_pseudo_dataloader = DataLoader(
-                    ConcatDataset([pseudo_dataset, train_dataset]),
-                    num_workers=10,
-                    batch_size=64,
-                    shuffle=True
-                )
+            if e > 100:
                 pseudo_dataset.set_masks(self.test(test_samples))
-                loader = train_pseudo_dataloader
-            else:
-                loader = train_dataloader
 
             with tqdm(total=len(loader), leave=False) as pbar, torch.enable_grad():
                 net.train()
@@ -165,7 +168,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=64
         )
 
         with tqdm(total=len(test_dataloader), leave=False) as pbar, torch.no_grad():

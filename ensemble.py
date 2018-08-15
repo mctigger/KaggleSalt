@@ -4,7 +4,7 @@ from tqdm import tqdm
 import utils
 
 
-name = 'u_resnet_50_pseudo_labeling_2'
+name = 'u_resnet_50_pseudo_labeling_3_augmentations'
 
 predictions_splits = []
 for i in range(0, 5):

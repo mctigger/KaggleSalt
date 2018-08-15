@@ -5,6 +5,7 @@ import torch
 from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
 from torch.optim import Adam
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader, ConcatDataset
 from torchvision.models import resnet
 from tqdm import tqdm
@@ -54,13 +55,20 @@ class Model:
         test_samples = utils.get_test_samples()
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 1e-6, 1e-4, 5)
+        cyclic_lr_scheduler = utils.CyclicLR(optimizer, 1e-4, 1e-6, 3)
+        lr_scheduler = StepLR(optimizer, 25, 0.1)
 
         criterion = losses.SoftDiceBCEWithLogitsLoss()
         epochs = 200
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.9, 1.1), rs.uniform(0.9, 1.1)),
+                **utils.transformations_options
+            ),
             transformations.Resize((128, 128), **utils.transformations_options),
         ])
 
@@ -69,13 +77,22 @@ class Model:
         ])
 
         train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
-        train_dataloader = DataLoader(
-            train_dataset,
+        test_predictions = utils.TestPredictions('refine_next_50_bn_augmentations_lovasz_long_training').load()
+        pseudo_dataset = datasets.SemiSupervisedImageDataset(
+            test_samples,
+            './data/test',
+            transforms_train,
+            size=int(len(train_dataset) * 1 / 2),
+            test_predictions=test_predictions,
+            momentum=0.25
+        )
+
+        loader = DataLoader(
+            ConcatDataset([pseudo_dataset, train_dataset]),
             num_workers=10,
             batch_size=64,
             shuffle=True
         )
-
 
         val_dataset = datasets.ImageDataset(samples_val, './data/train', transforms_val)
         val_dataloader = DataLoader(
@@ -95,19 +112,23 @@ class Model:
             average_meter_train = meters.AverageMeter()
             average_meter_val = meters.AverageMeter()
 
-            if e > 70:
-                pseudo_dataset = datasets.SemiSupervisedImageDataset(test_samples, './data/test', transforms_train,
-                                                                     size=int(len(train_dataset) * max((e - 70) / 100, 1)))
-                train_pseudo_dataloader = DataLoader(
+            if e > 120:
+                pseudo_dataset = datasets.SemiSupervisedImageDataset(
+                    test_samples,
+                    './data/test',
+                    transforms_train,
+                    size=int(len(train_dataset) * ((201 - e) / 80)),
+                    test_predictions=test_predictions,
+                    momentum=0.25
+                )
+                
+                pseudo_dataset.set_masks(self.test(test_samples))
+                loader = DataLoader(
                     ConcatDataset([pseudo_dataset, train_dataset]),
                     num_workers=10,
                     batch_size=64,
                     shuffle=True
                 )
-                pseudo_dataset.set_masks(self.test(test_samples))
-                loader = train_pseudo_dataloader
-            else:
-                loader = train_dataloader
 
             with tqdm(total=len(loader), leave=False) as pbar, torch.enable_grad():
                 net.train()
@@ -189,9 +210,6 @@ if __name__ == "__main__":
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
-        if i < 4:
-            continue
-
         model = Model(name, i)
         validation_stats = model.train(samples_train, samples_val)
         experiment_logger.set_split(i, validation_stats)

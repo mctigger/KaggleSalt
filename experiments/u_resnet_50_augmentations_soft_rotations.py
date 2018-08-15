@@ -1,11 +1,12 @@
 import os
+import math
 import pathlib
 
 import torch
 from torch.nn import DataParallel, BCEWithLogitsLoss
 from torch.nn import functional as F
 from torch.optim import Adam
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
 
@@ -51,35 +52,35 @@ class Model:
         pbar.update()
 
     def train(self, samples_train, samples_val):
-        test_samples = utils.get_test_samples()
         net = DataParallel(self.net).cuda()
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 1e-6, 1e-4, 5)
 
         criterion = losses.SoftDiceBCEWithLogitsLoss()
-        epochs = 200
+        epochs = 100
 
         transforms_train = generator.TransformationsGenerator([
             random.RandomFlipLr(),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.9, 1.1), rs.uniform(0.9, 1.1)),
+                rotation=lambda rs: rs.randint(-10, 10),
+                **utils.transformations_options
+            ),
             transformations.Resize((128, 128), **utils.transformations_options),
+        ])
+
+        transforms_train_image = generator.TransformationsGenerator([
         ])
 
         transforms_val = generator.TransformationsGenerator([
             transformations.Resize((128, 128), **utils.transformations_options),
         ])
 
-        train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
-        pseudo_dataset = datasets.SemiSupervisedImageDataset(
-            test_samples,
-            './data/test',
-            transforms_train,
-            size=int(len(train_dataset) * 1 / 2),
-            test_predictions=utils.TestPredictions('refine_next_50_bn_augmentations_lovasz_long_training').load(),
-            momentum=0.25
-        )
-
-        loader = DataLoader(
-            ConcatDataset([pseudo_dataset, train_dataset]),
+        train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train, transforms_train_image)
+        train_dataloader = DataLoader(
+            train_dataset,
             num_workers=10,
             batch_size=64,
             shuffle=True
@@ -103,13 +104,10 @@ class Model:
             average_meter_train = meters.AverageMeter()
             average_meter_val = meters.AverageMeter()
 
-            if e > 100:
-                pseudo_dataset.set_masks(self.test(test_samples))
-
-            with tqdm(total=len(loader), leave=False) as pbar, torch.enable_grad():
+            with tqdm(total=len(train_dataloader), leave=False) as pbar, torch.enable_grad():
                 net.train()
 
-                for images, masks_targets in loader:
+                for images, masks_targets in train_dataloader:
                     masks_targets = masks_targets.to(gpu)
                     masks_predictions = net(images)
 
@@ -120,7 +118,6 @@ class Model:
                     optimizer.zero_grad()
 
                     average_meter_train.add('loss', loss.item())
-
                     self.update_pbar(masks_predictions, masks_targets, pbar, average_meter_train, 'Training epoch {}'.format(e))
 
             with tqdm(total=len(val_dataloader), leave=True) as pbar, torch.no_grad():
@@ -162,10 +159,10 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=128
         )
 
-        with tqdm(total=len(test_dataloader), leave=False) as pbar, torch.no_grad():
+        with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, ids in test_dataloader:
