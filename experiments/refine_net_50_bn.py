@@ -89,7 +89,7 @@ class Model:
         train_dataloader = DataLoader(
             train_dataset,
             num_workers=10,
-            batch_size=64,
+            batch_size=32,
             shuffle=True
         )
 
@@ -97,7 +97,7 @@ class Model:
         val_dataloader = DataLoader(
             val_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=64
         )
 
         best_val_mAP = 0
@@ -166,7 +166,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=64
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
