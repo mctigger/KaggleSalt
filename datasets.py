@@ -1,5 +1,7 @@
 from os.path import join
 
+import numpy as np
+
 import torch
 from torch.utils.data import Dataset
 from torchvision.transforms import ToTensor
@@ -21,7 +23,7 @@ class ImageDataset(Dataset):
     def __getitem__(self, index):
         id = self.samples[index]
 
-        image = imread(join(self.path, 'images', id) + '.png')
+        image = img_as_float(imread(join(self.path, 'images', id) + '.png'))
 
         t = next(self.transforms)
 
