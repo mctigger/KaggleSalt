@@ -207,9 +207,4 @@ if __name__ == "__main__":
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
 
-        # Predict the val data (for stacking)
-        val_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='val')
-        val_predictions.add_predictions(model.test(samples_val, dir_test='./data/train'))
-        val_predictions.save()
-
     experiment_logger.save()

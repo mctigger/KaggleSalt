@@ -291,15 +291,21 @@ def get_triangular_lr_2(iteration, stepsize, base_lr, max_lr):
 
 
 class CyclicLR(_LRScheduler):
-    def __init__(self, optimizer, base_lr, max_lr, stepsize):
+    def __init__(self, optimizer, stepsize, steps):
         self.stepsize = stepsize
-        self.base_lr = base_lr
-        self.max_lr = max_lr
+        self.steps = steps
         super(CyclicLR, self).__init__(optimizer)
 
     def get_lr(self):
         epoch = self.last_epoch
-        learning_rate = get_triangular_lr(epoch, self.stepsize, self.base_lr, self.max_lr)
+
+        base_lr, max_lr = 0, 0
+        for e, (b_lr, m_lr) in self.steps.items():
+            if e <= epoch:
+                base_lr = b_lr
+                max_lr = m_lr
+
+        learning_rate = get_triangular_lr(epoch, self.stepsize, base_lr, max_lr)
 
         return [learning_rate for base_lr in self.base_lrs]
 

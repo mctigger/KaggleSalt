@@ -26,6 +26,14 @@ class SoftDiceBCEWithLogitsLoss(nn.Module):
         return self.bce(prediction, target) + self.dice(prediction, target)
 
 
+class LovaszWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(LovaszWithLogitsLoss, self).__init__()
+
+    def forward(self, prediction, target):
+        return loss_lovasz.lovasz_hinge(prediction, target, per_image=True)
+
+
 class LovaszBCEWithLogitsLoss(nn.Module):
     def __init__(self):
         super(LovaszBCEWithLogitsLoss, self).__init__()

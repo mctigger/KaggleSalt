@@ -1,16 +1,60 @@
 from torch import nn
 from torch.nn import functional as F
-from torchvision.models.resnet import BasicBlock
+from torchvision.models.resnet import BasicBlock, Bottleneck
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
     return nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=bias)
 
 
+class RefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, num_features, scale_factor=4):
+        super(RefineNetUpsampleClassifier, self).__init__()
+        self.classifier = nn.Sequential(*[
+            RCU(num_features, num_features),
+            RCU(num_features, num_features),
+            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
+
+
+class RefineNetDetailedClassifier(nn.Module):
+    def __init__(self, num_features):
+        super(RefineNetDetailedClassifier, self).__init__()
+        self.classifier = nn.Sequential(*[
+            RCU(num_features, num_features // 2),
+            RCU(num_features // 2, num_features // 2),
+            nn.Upsample(scale_factor=2, mode='bilinear'),
+            RCU(num_features // 2, num_features // 4),
+            RCU(num_features // 4, num_features // 4),
+            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=2, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
+
+
 class RCU(nn.Module):
+    multiplier = 1
+
     def __init__(self, in_channels, out_channels):
         super(RCU, self).__init__()
         self.block = BasicBlock(in_channels, out_channels)
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class BottleneckRCU(nn.Module):
+    multiplier = 4
+
+    def __init__(self, in_channels, out_channels):
+        super(BottleneckRCU, self).__init__()
+        self.block = Bottleneck(in_channels, out_channels)
 
     def forward(self, x):
         return self.block(x)
@@ -65,22 +109,23 @@ class CRP(nn.Module):
 
 
 class RefineNetBlock(nn.Module):
-    def __init__(self, channels, config, crp=CRP):
+    def __init__(self, channels, config, crp=CRP, rcu=RCU, dropout=0):
         super(RefineNetBlock, self).__init__()
         paths = []
         for in_channels, scale_factor in config:
             p = nn.Sequential(*[
-                nn.Conv2d(in_channels, channels, kernel_size=1, stride=1, padding=0, bias=False),
-                RCU(channels, channels),
-                RCU(channels, channels)
+                nn.Conv2d(in_channels, channels*rcu.multiplier, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.Dropout2d(dropout),
+                rcu(channels*rcu.multiplier, channels),
+                rcu(channels*rcu.multiplier, channels)
             ])
             paths.append(p)
 
         self.paths = nn.ModuleList(paths)
 
-        self.mrf = MrF(channels, [scale_factor for in_channels, scale_factor in config])
-        self.crp = crp(channels)
-        self.out = RCU(channels, channels)
+        self.mrf = MrF(channels*rcu.multiplier, [scale_factor for in_channels, scale_factor in config])
+        self.crp = crp(channels*rcu.multiplier)
+        self.out = rcu(channels*rcu.multiplier, channels)
 
     def forward(self, inputs):
         paths = [path(inp) for inp, path in zip(inputs, self.paths)]
@@ -91,45 +136,31 @@ class RefineNetBlock(nn.Module):
         return x
 
 
-class RefineNetUpsampleClassifier(nn.Module):
-    def __init__(self, num_features):
-        super(RefineNetUpsampleClassifier, self).__init__()
-        self.classifier = nn.Sequential(*[
-            RCU(num_features, num_features),
-            RCU(num_features, num_features),
-            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
-            nn.Upsample(scale_factor=4, mode='bilinear')
-        ])
-
-    def forward(self, x):
-        return self.classifier(x)
-
-
-class RefineNetDetailedClassifier(nn.Module):
-    def __init__(self, num_features):
-        super(RefineNetDetailedClassifier, self).__init__()
-        self.classifier = nn.Sequential(*[
-            RCU(num_features, num_features),
-            nn.Upsample(scale_factor=2, mode='bilinear'),
-            RCU(num_features, num_features),
-            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
-            nn.Upsample(scale_factor=2, mode='bilinear')
-        ])
-
-    def forward(self, x):
-        return self.classifier(x)
-
-
 class RefineNet(nn.Module):
-    def __init__(self, encoder, num_features=256, block_multiplier=4, crp=CRP, classifier=RefineNetUpsampleClassifier):
+    def __init__(
+            self,
+            encoder,
+            num_features=None,
+            block_multiplier=4,
+            crp=CRP,
+            rcu=RCU,
+            classifier=RefineNetUpsampleClassifier,
+            dropout=0
+    ):
         super(RefineNet, self).__init__()
 
-        self.refine_0 = RefineNetBlock(num_features*2, [(block_multiplier*512, 1)], crp=crp)
-        self.refine_1 = RefineNetBlock(num_features, [(block_multiplier*256, 1), (num_features*2, 2)], crp=crp)
-        self.refine_2 = RefineNetBlock(num_features, [(block_multiplier*128, 1), (num_features, 2)], crp=crp)
-        self.refine_3 = RefineNetBlock(num_features, [(block_multiplier*64, 1), (num_features, 2)], crp=crp)
+        if num_features is None:
+            num_features = [256*2, 256, 256, 256]
 
-        self.classifier = classifier(num_features)
+        if not isinstance(num_features, list):
+            num_features = [num_features*2, num_features, num_features, num_features]
+
+        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*512, 1)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*256, 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*128, 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*64, 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+
+        self.classifier = classifier(num_features[3]*rcu.multiplier)
 
         self.encoder = encoder
 
@@ -224,3 +255,12 @@ class PyramidPooling(nn.Module):
         c = self.conv_c(x)
 
         return a + b + c + x
+
+
+class Identity(nn.Module):
+    def __init__(self, channels):
+        super(Identity, self).__init__()
+
+    def forward(self, x):
+
+        return x

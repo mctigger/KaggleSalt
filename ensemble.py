@@ -5,14 +5,16 @@ import utils
 
 
 def ensemble_mean(p):
-    return np.mean(p.reshape(-1, *p.shape[:2]), axis=0)
+    return np.mean(np.mean(p, axis=0) > 0.5, axis=0)
 
 
 def ensemble_vote(p):
-    return np.mean(-1, *p.shape[:2] > 0.5, axis=0)
+    return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
 
 
-experiments = ['u_resnet_50_pseudo_labeling_3_augmentations']
+
+experiments = ['refine_net_bn_50_256_tta']
+ensemble_name = 'refine_net_bn_50_256_tta'
 
 test_predictions_experiment = []
 
@@ -31,7 +33,7 @@ for id in tqdm(test_samples):
 
     p = []
     for test_predictions_split in test_predictions_experiment:
-        test_predictions_split = np.stack([predictions[id] for predictions in test_predictions_split])
+        test_predictions_split = np.stack([predictions[id] for predictions in test_predictions_split], axis=0)
         p.append(test_predictions_split)
     p = np.stack(p, axis=0)
 
@@ -39,14 +41,14 @@ for id in tqdm(test_samples):
     predictions_mean.append((prediction_ensemble, id))
 
 # Save ensembled predictions (for example for pseudo-labeling)
-ensemble_predictions = utils.TestPredictions(name)
+ensemble_predictions = utils.TestPredictions(ensemble_name)
 ensemble_predictions.add_predictions(predictions_mean)
 ensemble_predictions.save()
 
 # Threshold for submission
 predictions_thresholded = [p > 0.5 for p, id in predictions_mean]
 
-submission = utils.Submission(name)
+submission = utils.Submission(ensemble_name)
 submission.add_samples(predictions_thresholded, test_samples)
 submission.save()
 
