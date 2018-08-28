@@ -23,9 +23,6 @@ cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
 
-resize = transformations.Resize((202, 202), **utils.transformations_options)
-
-
 class Model:
     def __init__(self, name, split):
         self.split = split
