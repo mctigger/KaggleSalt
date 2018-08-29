@@ -1,6 +1,7 @@
 predictions/
 data/
 checkpoints/
+submissions/
 
 # Intellij
 .idea

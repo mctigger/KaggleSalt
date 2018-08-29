@@ -13,14 +13,14 @@ def ensemble_vote(p):
 
 
 
-experiments = ['refine_net_bn_50_256_tta']
-ensemble_name = 'refine_net_bn_50_256_tta'
+experiments = ['refine_net_bn_50_128_pad']
+ensemble_name = 'refine_net_bn_50_128_pad - split 0 - flip tta'
 
 test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
-    for i in range(0, 5):
+    for i in range(0, 1):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load())
     test_predictions_experiment.append(test_predictions_split)

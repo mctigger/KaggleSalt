@@ -25,20 +25,19 @@ gpu = torch.device('cuda')
 
 class Model:
     def __init__(self, name, split):
+        self.name = name
         self.split = split
-        self.path = os.path.join('./checkpoints', name + '-split_{}'.format(i))
+        self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(ResNetBase(
             resnet.resnet50(pretrained=True)),
             num_features=128
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
-            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()]),
-            tta.Pipeline([tta.Pad((0, 27, 0, 27))]),
-            tta.Pipeline([tta.Pad((0, 27, 0, 27)), tta.Flip()]),
-            tta.Pipeline([tta.Pad((27, 0, 27, 0))]),
-            tta.Pipeline([tta.Pad((27, 0, 27, 0)), tta.Flip()])
+            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
+
+        self.criterion = losses.LovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -72,10 +71,47 @@ class Model:
 
         return masks_predictions
 
-    def train(self, samples_train, samples_val):
-        net = DataParallel(self.net).cuda()
+    def fit(self, samples_train, samples_val):
+        net = DataParallel(self.net)
 
-        transforms_train = generator.TransformationsGenerator([
+        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        lr_scheduler = utils.CyclicLR(optimizer, 5, {
+            0: (1e-4, 1e-6),
+            100: (0.5e-4, 1e-6),
+            160: (1e-5, 1e-6),
+        })
+
+        epochs = 200
+
+        best_val_mAP = 0
+        best_stats = None
+
+        # Logs stats for each epoch and saves them as .csv at the end
+        epoch_logger = utils.EpochLogger(self.name + '-split_{}'.format(self.split))
+
+        # Training
+        for e in range(epochs):
+            lr_scheduler.step(e)
+
+            stats_train = self.train(net, samples_train, optimizer, e)
+            stats_val = self.validate(net, samples_val, e)
+
+            stats = {**stats_train, **stats_val}
+
+            epoch_logger.add_epoch(stats)
+            current_mAP = stats_val['val_mAP']
+            if current_mAP > best_val_mAP:
+                best_val_mAP = current_mAP
+                best_stats = stats
+                self.save()
+
+        # Post training
+        epoch_logger.save()
+
+        return best_stats
+
+    def train(self, net, samples, optimizer, e):
+        transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
@@ -86,99 +122,71 @@ class Model:
             transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
-        transforms_val = generator.TransformationsGenerator([])
-
-        train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
-        train_dataloader = DataLoader(
-            train_dataset,
+        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataloader = DataLoader(
+            dataset,
             num_workers=10,
             batch_size=32,
             shuffle=True
         )
 
-        val_dataset = datasets.ImageDataset(samples_val, './data/train', transforms_val)
-        val_dataloader = DataLoader(
-            val_dataset,
+        average_meter_train = meters.AverageMeter()
+
+        with tqdm(total=len(dataloader), leave=False) as pbar, torch.enable_grad():
+            net.train()
+
+            for images, masks_targets in dataloader:
+                masks_targets = masks_targets.to(gpu)
+                masks_predictions = net(images)
+
+                loss = self.criterion(masks_predictions, masks_targets)
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+
+                average_meter_train.add('loss', loss.item())
+                self.update_pbar(
+                    torch.sigmoid(masks_predictions),
+                    masks_targets,
+                    pbar,
+                    average_meter_train,
+                    'Training epoch {}'.format(e)
+                )
+
+        train_stats = {'train_' + k: v for k, v in average_meter_train.get_all().items()}
+        return train_stats
+
+    def validate(self, net, samples, e):
+        transforms = generator.TransformationsGenerator([])
+        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataloader = DataLoader(
+            dataset,
             num_workers=10,
             batch_size=64
         )
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
-        })
+        average_meter_val = meters.AverageMeter()
 
-        criterion = losses.LovaszBCEWithLogitsLoss()
-        epochs = 200
+        with tqdm(total=len(dataloader), leave=True) as pbar, torch.no_grad():
+            net.eval()
 
-        best_val_mAP = 0
-        best_stats = None
+            for images, masks_targets in dataloader:
+                masks_targets = masks_targets.to(gpu)
+                masks_predictions = self.predict(net, images)
 
-        epoch_logger = utils.EpochLogger(name + '-split_{}'.format(self.split))
+                self.update_pbar(
+                    masks_predictions,
+                    masks_targets,
+                    pbar,
+                    average_meter_val,
+                    'Validation epoch {}'.format(e)
+                )
 
-        # Training
-        for e in range(epochs):
-            lr_scheduler.step(e)
-
-            average_meter_train = meters.AverageMeter()
-            average_meter_val = meters.AverageMeter()
-
-            with tqdm(total=len(train_dataloader), leave=False) as pbar, torch.enable_grad():
-                net.train()
-
-                for images, masks_targets in train_dataloader:
-                    masks_targets = masks_targets.to(gpu)
-                    masks_predictions = net(images)
-
-                    loss = criterion(masks_predictions, masks_targets)
-                    loss.backward()
-                    optimizer.step()
-                    optimizer.zero_grad()
-
-                    average_meter_train.add('loss', loss.item())
-                    self.update_pbar(
-                        torch.sigmoid(masks_predictions),
-                        masks_targets,
-                        pbar,
-                        average_meter_train,
-                        'Training epoch {}'.format(e)
-                    )
-
-            with tqdm(total=len(val_dataloader), leave=True) as pbar, torch.no_grad():
-                net.eval()
-
-                for images, masks_targets in val_dataloader:
-                    masks_targets = masks_targets.to(gpu)
-                    masks_predictions = self.predict(net, images)
-
-                    average_meter_val.add('loss', 0)
-                    self.update_pbar(
-                        masks_predictions,
-                        masks_targets,
-                        pbar,
-                        average_meter_val,
-                        'Validation epoch {}'.format(e)
-                    )
-
-            train_stats = {'train_' + k: v for k, v in average_meter_train.get_all().items()}
-            val_stats = {'val_' + k: v for k, v in average_meter_val.get_all().items()}
-            stats = {**train_stats, **val_stats}
-
-            epoch_logger.add_epoch(stats)
-            if average_meter_val.get('mAP') > best_val_mAP:
-                best_val_mAP = average_meter_val.get('mAP')
-                best_stats = stats
-                self.save()
-
-        # Post training
-        epoch_logger.save()
-
-        return best_stats
+        val_stats = {'val_' + k: v for k, v in average_meter_val.get_all().items()}
+        return val_stats
 
     def test(self, samples_test, dir_test='./data/test'):
-        net = DataParallel(self.net).cuda()
+        net = DataParallel(self.net)
 
         transforms = generator.TransformationsGenerator([])
 
@@ -205,20 +213,22 @@ class Model:
                     yield p, id
 
 
-file_name = os.path.basename(__file__).split('.')[0]
-name = str(file_name)
+def main():
+    file_name = os.path.basename(__file__).split('.')[0]
+    name = str(file_name)
 
-
-if __name__ == "__main__":
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
         model = Model(name, i)
-        stats = model.train(samples_train, samples_val)
+        stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
 
         # Load the best performing checkpoint
         model.load()
+
+        # Do a final validation
+        model.validate(DataParallel(model.net), samples_val, -1)
 
         # Predict the test data
         test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
@@ -226,3 +236,6 @@ if __name__ == "__main__":
         test_predictions.save()
 
     experiment_logger.save()
+
+if __name__ == "__main__":
+    main()
