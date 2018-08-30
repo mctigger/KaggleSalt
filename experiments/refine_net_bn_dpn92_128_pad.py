@@ -3,15 +3,14 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refine_net_bn import RefineNet, ResNetBase
+from nets.refine_net_bn import RefineNet
+from nets.dpn import dpn92, DPNBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -22,21 +21,21 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
-resize = transformations.Resize((202, 202), **utils.transformations_options)
-padding = (224 - 202) // 2
 
 class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
-            resnet.resnet50(pretrained=True)),
-            num_features=128
+        self.net = RefineNet(
+            DPNBase(dpn92()),
+            num_features=128,
+            block_multiplier=1,
+            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640]
         )
         self.tta = [
-            tta.Pipeline([tta.Pad((padding, padding, padding, padding))]),
-            tta.Pipeline([tta.Pad((padding, padding, padding, padding)), tta.Flip()])
+            tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
+            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
         self.criterion = losses.LovaszBCEWithLogitsLoss()
@@ -125,7 +124,6 @@ class Model:
 
     def train(self, net, samples, optimizer, e):
         transforms = generator.TransformationsGenerator([
-            resize,
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
@@ -133,7 +131,7 @@ class Model:
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
             ),
-            transformations.Padding(((padding, padding), (padding, padding), (0, 0)))
+            transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
@@ -171,7 +169,7 @@ class Model:
         return train_stats
 
     def validate(self, net, samples, e):
-        transforms = generator.TransformationsGenerator([resize])
+        transforms = generator.TransformationsGenerator([])
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
         dataloader = DataLoader(
             dataset,
@@ -219,7 +217,7 @@ class Model:
 
             for images, ids in test_dataloader:
                 images = images.to(gpu)
-                masks_predictions = F.adaptive_avg_pool2d(predict(net, images), (101, 101))
+                masks_predictions = predict(net, images)
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()

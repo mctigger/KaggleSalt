@@ -141,6 +141,7 @@ class RefineNet(nn.Module):
             self,
             encoder,
             num_features=None,
+            num_features_base=None,
             block_multiplier=4,
             crp=CRP,
             rcu=RCU,
@@ -155,21 +156,20 @@ class RefineNet(nn.Module):
         if not isinstance(num_features, list):
             num_features = [num_features*2, num_features, num_features, num_features]
 
-        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*512, 1)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*256, 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*128, 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*64, 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        if num_features_base is None:
+            num_features_base = [64, 128, 256, 512]
+
+        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
 
         self.classifier = classifier(num_features[3]*rcu.multiplier)
 
         self.encoder = encoder
 
     def forward(self, x):
-        x = self.encoder.layer0(x)
-        x_0 = self.encoder.layer1(x)
-        x_1 = self.encoder.layer2(x_0)
-        x_2 = self.encoder.layer3(x_1)
-        x_3 = self.encoder.layer4(x_2)
+        x_0, x_1, x_2, x_3 = self.encoder(x)
 
         x = self.refine_0([x_3])
         x = self.refine_1([x_2, x])
@@ -196,6 +196,15 @@ class ResNetBase(nn.Module):
         self.layer3 = resnet.layer3
         self.layer4 = resnet.layer4
 
+    def forward(self, x):
+        x_0 = self.layer0(x)
+        x_1 = self.layer1(x_0)
+        x_2 = self.layer2(x_1)
+        x_3 = self.layer3(x_2)
+        x_4 = self.layer4(x_3)
+
+        return x_1, x_2, x_3, x_4
+
 
 class ResNeXtBase(nn.Module):
     def __init__(self, resnet):
@@ -211,6 +220,15 @@ class ResNeXtBase(nn.Module):
         self.layer2 = resnet.layer2
         self.layer3 = resnet.layer3
         self.layer4 = resnet.layer4
+
+    def forward(self, x):
+        x_0 = self.layer0(x)
+        x_1 = self.layer1(x_0)
+        x_2 = self.layer2(x_1)
+        x_3 = self.layer3(x_2)
+        x_4 = self.layer4(x_3)
+
+        return x_1, x_2, x_3, x_4
 
 
 class DilatedPyramidPooling(nn.Module):

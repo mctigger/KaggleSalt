@@ -22,8 +22,6 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
-resize = transformations.Resize((202, 202), **utils.transformations_options)
-padding = (224 - 202) // 2
 
 class Model:
     def __init__(self, name, split):
@@ -35,8 +33,8 @@ class Model:
             num_features=128
         )
         self.tta = [
-            tta.Pipeline([tta.Pad((padding, padding, padding, padding))]),
-            tta.Pipeline([tta.Pad((padding, padding, padding, padding)), tta.Flip()])
+            tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
+            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
         self.criterion = losses.LovaszBCEWithLogitsLoss()
@@ -125,17 +123,16 @@ class Model:
 
     def train(self, net, samples, optimizer, e):
         transforms = generator.TransformationsGenerator([
-            resize,
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
                 translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
+                rotation=lambda rs: rs.randint(-10, 10),
                 **utils.transformations_options
             ),
-            transformations.Padding(((padding, padding), (padding, padding), (0, 0)))
+            random.RandomPadding(27, 27)
         ])
-
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
         dataloader = DataLoader(
             dataset,
@@ -171,7 +168,7 @@ class Model:
         return train_stats
 
     def validate(self, net, samples, e):
-        transforms = generator.TransformationsGenerator([resize])
+        transforms = generator.TransformationsGenerator([])
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
         dataloader = DataLoader(
             dataset,
@@ -219,7 +216,7 @@ class Model:
 
             for images, ids in test_dataloader:
                 images = images.to(gpu)
-                masks_predictions = F.adaptive_avg_pool2d(predict(net, images), (101, 101))
+                masks_predictions = predict(net, images)
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()
