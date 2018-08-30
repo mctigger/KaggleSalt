@@ -1,7 +1,10 @@
+import math
+
 from torch import nn
 from torch.nn import functional as F
-from torchvision.models.resnet import BasicBlock, Bottleneck
+from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
+from nets.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
 
 def conv_3x3(in_channels, out_channels, bias=False):
     return nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=bias)
@@ -49,12 +52,67 @@ class RCU(nn.Module):
         return self.block(x)
 
 
+class SERCU(nn.Module):
+    multiplier = 1
+
+    def __init__(self, in_channels, out_channels, stride=1, downsample=None, reduction=16):
+        super(SERCU, self).__init__()
+        self.conv1 = conv3x3(in_channels, out_channels, stride)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3(out_channels, out_channels)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.downsample = downsample
+        self.stride = stride
+        self.se_module = SEModule(out_channels * self.multiplier, reduction=reduction)
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out = self.se_module(out) + residual
+        out = self.relu(out)
+
+        return out
+
+
 class BottleneckRCU(nn.Module):
     multiplier = 4
 
     def __init__(self, in_channels, out_channels):
         super(BottleneckRCU, self).__init__()
         self.block = Bottleneck(in_channels, out_channels)
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class SEBottleneckRCU(nn.Module):
+    multiplier = 4
+
+    def __init__(self, in_channels, out_channels):
+        super(SEBottleneckRCU, self).__init__()
+        self.block = SEResNetBottleneck(in_channels, out_channels, groups=1, reduction=16)
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class SENextBottleneckRCU(nn.Module):
+    multiplier = 4
+
+    def __init__(self, in_channels, out_channels):
+        super(SENextBottleneckRCU, self).__init__()
+        self.block = SEResNeXtBottleneck(in_channels, out_channels, groups=16, reduction=16)
 
     def forward(self, x):
         return self.block(x)
