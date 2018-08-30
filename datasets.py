@@ -7,6 +7,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms import ToTensor
 from skimage.io import imread
 from skimage import img_as_float
+from scipy.misc import imshow
 
 
 class ImageDataset(Dataset):

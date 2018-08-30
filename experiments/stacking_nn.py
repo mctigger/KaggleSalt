@@ -3,7 +3,6 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
@@ -11,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refine_net_bn import RefineNet, ResNetBase
+from nets.u_net import UNet
 from metrics import iou, mAP
 import datasets
 import utils
@@ -22,16 +21,15 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
+predictions = [utils.TestPredictions('refine_net_bn_50_128_pad', mode='val').load()]
+
 
 class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
-            resnet.resnet50(pretrained=True)),
-            num_features=128
-        )
+        self.net = UNet(10)
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
@@ -66,7 +64,7 @@ class Model:
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
-        tta_masks = torch.stack(tta_masks, dim=1)
+        tta_masks = torch.stack(tta_masks, dim=0)
 
         return tta_masks
 
@@ -88,11 +86,11 @@ class Model:
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
+            10: (0.5e-4, 1e-6),
+            20: (1e-4, 1e-6),
         })
 
-        epochs = 200
+        epochs = 30
 
         best_val_mAP = 0
         best_stats = None
@@ -123,21 +121,14 @@ class Model:
 
     def train(self, net, samples, optimizer, e):
         transforms = generator.TransformationsGenerator([
-            random.RandomFlipLr(),
-            random.RandomAffine(
-                image_size=101,
-                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
-                scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
-                **utils.transformations_options
-            ),
             transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataset = datasets.StackingDataset(samples, './data/train', transforms, predictions)
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=32,
+            batch_size=64,
             shuffle=True
         )
 
@@ -169,7 +160,7 @@ class Model:
 
     def validate(self, net, samples, e):
         transforms = generator.TransformationsGenerator([])
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataset = datasets.StackingDataset(samples, './data/train', transforms, predictions)
         dataloader = DataLoader(
             dataset,
             num_workers=10,

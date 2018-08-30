@@ -29,13 +29,14 @@ resize = transformations.Resize((128, 128), **utils.transformations_options)
 class Model:
     def __init__(self, name, split):
         self.split = split
-        self.path = os.path.join('./checkpoints', name + '-split_{}'.format(i))
+        self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(ResNetBase(
             resnet.resnet50(pretrained=True)),
             num_features=128
         )
+
         self.tta = [
-            (tta.identity, tta.identity)
+            tta.Pipeline([]),
         ]
 
     def save(self):
@@ -60,14 +61,26 @@ class Model:
 
     def predict(self, net, images):
         tta_masks = []
-        for tta_forward, tta_backward in self.tta:
-            masks_predictions = net(tta_forward(images))
-            tta_masks.append(tta_backward(masks_predictions))
+        for tta in self.tta:
+            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
+            tta_masks.append(masks_predictions)
 
         tta_masks = torch.stack(tta_masks, dim=0)
         masks_predictions = torch.mean(tta_masks, dim=0)
 
         return masks_predictions
+
+    def predict_raw(self, net, images):
+        tta_masks = []
+        for tta in self.tta:
+            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions = tta.transform_backward(masks_predictions)
+            tta_masks.append(masks_predictions)
+
+        tta_masks = torch.stack(tta_masks, dim=0)
+
+        return tta_masks
 
     def train(self, samples_train, samples_val):
         net = DataParallel(self.net).cuda()

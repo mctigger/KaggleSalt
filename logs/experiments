@@ -1,6 +1,7 @@
 experiment train_iou train_loss train_mAP val_iou val_loss val_mAP
-refine_net_bn_50_256_pad 0.9362 0.1647 0.9156 0.8687  0.8446
-refine_net_bn_50_128_pad 0.9279 0.1885 0.9048 0.8687  0.8421
+refine_next_bn_50_128_pad 0.9279 0.1885 0.9048 0.8687 0.84556	
+refine_net_bn_50_256_pad 0.9362 0.1647 0.9156 0.8687 0.8446
+refine_net_bn_50_128_pad 0.9279 0.1885 0.9048 0.8687 0.8421
 refine_net_bn_50_128_224x224 0.9062 0.1998 0.8677 0.8618 0.5751 0.8286
 refine_net_bn_50_256 0.9037 0.2080 0.8648 0.8607 0.6193 0.8261
 refine_next_bn_50_128 0.9101 0.1751 0.8728 0.8609 0.6467 0.8249

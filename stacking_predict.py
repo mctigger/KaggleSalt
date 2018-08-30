@@ -13,11 +13,17 @@ args = parser.parse_args()
 
 name = args.name
 
-experiment_logger = utils.ExperimentLogger(name)
-
 tta = [
     tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
-    tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
+    tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()]),
+    tta.Pipeline([tta.Pad((17, 10, 17, 10))]),
+    tta.Pipeline([tta.Pad((10, 17, 17, 10))]),
+    tta.Pipeline([tta.Pad((17, 10, 10, 17))]),
+    tta.Pipeline([tta.Pad((10, 17, 10, 17))]),
+    tta.Pipeline([tta.Pad((17, 10, 17, 10)), tta.Flip()]),
+    tta.Pipeline([tta.Pad((10, 17, 17, 10)), tta.Flip()]),
+    tta.Pipeline([tta.Pad((17, 10, 10, 17)), tta.Flip()]),
+    tta.Pipeline([tta.Pad((10, 17, 10, 17)), tta.Flip()]),
 ]
 
 test_predictions = utils.TestPredictions(name, mode='val')
@@ -33,7 +39,7 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
     model.tta = tta
 
     # Predict the test data
-    test_predictions.add_predictions(model.test(samples_val), predict=model.predict_raw)
+    test_predictions.add_predictions(model.test(samples_val, dir_test='./data/train', predict=model.predict_raw))
+
 
 test_predictions.save()
-experiment_logger.print()

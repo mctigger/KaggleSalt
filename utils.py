@@ -242,6 +242,7 @@ class ExperimentLogger:
         print(df)
 
     def save(self):
+        path_csv = os.path.join('./logs', 'experiments')
         df = self.create_df()
         df.to_csv(
             path_csv,
