@@ -13,8 +13,8 @@ def ensemble_vote(p):
 
 
 
-experiments = ['refine_net_bn_50_128_pad']
-ensemble_name = 'refine_net_bn_50_128_pad - split 0 - flip tta'
+experiments = ['refine_net_bn_50_256_pad']
+ensemble_name = 'refine_net_bn_50_256_pad - split 0'
 
 test_predictions_experiment = []
 

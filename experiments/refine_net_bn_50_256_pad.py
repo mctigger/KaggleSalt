@@ -30,7 +30,7 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(ResNetBase(
             resnet.resnet50(pretrained=True)),
-            num_features=128
+            num_features=256
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -58,17 +58,6 @@ class Model:
         )
 
         pbar.update()
-
-    def predict_raw(self, net, images):
-        tta_masks = []
-        for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
-            masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
-            tta_masks.append(masks_predictions)
-
-        tta_masks = torch.stack(tta_masks, dim=0)
-
-        return tta_masks
 
     def predict(self, net, images):
         tta_masks = []
@@ -196,10 +185,7 @@ class Model:
         val_stats = {'val_' + k: v for k, v in average_meter_val.get_all().items()}
         return val_stats
 
-    def test(self, samples_test, dir_test='./data/test', predict=None):
-        if predict is None:
-            predict = self.predict
-
+    def test(self, samples_test, dir_test='./data/test'):
         net = DataParallel(self.net)
 
         transforms = generator.TransformationsGenerator([])
@@ -216,7 +202,7 @@ class Model:
 
             for images, ids in test_dataloader:
                 images = images.to(gpu)
-                masks_predictions = predict(net, images)
+                masks_predictions = self.predict(net, images)
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()
@@ -250,7 +236,6 @@ def main():
         test_predictions.save()
 
     experiment_logger.save()
-
 
 if __name__ == "__main__":
     main()

@@ -23,7 +23,7 @@ cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
 
-resize = transformations.Resize((128, 128), **utils.transformations_options)
+resize = transformations.Resize((202, 202), **utils.transformations_options)
 
 
 class Model:
@@ -32,10 +32,11 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(i))
         self.net = RefineNet(ResNetBase(
             resnet.resnet50(pretrained=True)),
-            num_features=256
+            num_features=128
         )
         self.tta = [
-            (tta.identity, tta.identity)
+            tta.Pipeline([tta.Resize((202, 202)), tta.Pad((11, 11, 11, 11)), tta.Identity()]),
+            tta.Pipeline([tta.Resize((202, 202)), tta.Pad((11, 11, 11, 11)), tta.Flip()]),
         ]
 
     def save(self):
@@ -60,9 +61,9 @@ class Model:
 
     def predict(self, net, images):
         tta_masks = []
-        for tta_forward, tta_backward in self.tta:
-            masks_predictions = net(tta_forward(images))
-            tta_masks.append(tta_backward(masks_predictions))
+        for tta in self.tta:
+            masks_predictions = net(tta.transform_forward(images))
+            tta_masks.append(torch.sigmoid(tta.transform_backward(masks_predictions)))
 
         tta_masks = torch.stack(tta_masks, dim=0)
         masks_predictions = torch.mean(tta_masks, dim=0)
@@ -73,6 +74,8 @@ class Model:
         net = DataParallel(self.net).cuda()
 
         transforms_train = generator.TransformationsGenerator([
+            resize,
+            transformations.Padding(((11, 11), (11, 11), (0, 0))),
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
@@ -80,12 +83,9 @@ class Model:
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
             ),
-            resize,
         ])
 
-        transforms_val = generator.TransformationsGenerator([
-            resize,
-        ])
+        transforms_val = generator.TransformationsGenerator([])
 
         train_dataset = datasets.ImageDataset(samples_train, './data/train', transforms_train)
         train_dataloader = DataLoader(
@@ -105,6 +105,8 @@ class Model:
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
+            100: (0.5e-4, 1e-6),
+            160: (1e-5, 1e-6),
         })
 
         criterion = losses.LovaszBCEWithLogitsLoss()
@@ -126,12 +128,8 @@ class Model:
                 net.train()
 
                 for images, masks_targets in train_dataloader:
-
                     masks_targets = masks_targets.to(gpu)
                     masks_predictions = net(images)
-
-                    masks_predictions = F.adaptive_avg_pool2d(masks_predictions, (101, 101))
-                    masks_targets = F.adaptive_avg_pool2d(masks_targets, (101, 101))
 
                     loss = criterion(masks_predictions, masks_targets)
                     loss.backward()
@@ -152,16 +150,14 @@ class Model:
 
                 for images, masks_targets in val_dataloader:
                     masks_targets = masks_targets.to(gpu)
+
+                    loss = 0
+
                     masks_predictions = self.predict(net, images)
-
-                    masks_predictions = F.adaptive_avg_pool2d(masks_predictions, (101, 101))
-                    masks_targets = F.adaptive_avg_pool2d(masks_targets, (101, 101))
-
-                    loss = criterion(masks_predictions, masks_targets)
 
                     average_meter_val.add('loss', loss.item())
                     self.update_pbar(
-                        torch.sigmoid(masks_predictions),
+                        masks_predictions,
                         masks_targets,
                         pbar,
                         average_meter_val,
@@ -186,9 +182,7 @@ class Model:
     def test(self, samples_test, dir_test='./data/test'):
         net = DataParallel(self.net).cuda()
 
-        transforms = generator.TransformationsGenerator([
-            resize
-        ])
+        transforms = generator.TransformationsGenerator([])
 
         test_dataset = datasets.ImageDataset(samples_test, dir_test, transforms, test=True)
         test_dataloader = DataLoader(
@@ -203,7 +197,6 @@ class Model:
             for images, ids in test_dataloader:
                 images = images.to(gpu)
                 masks_predictions = self.predict(net, images)
-                masks_predictions = torch.sigmoid(F.adaptive_avg_pool2d(masks_predictions, (101, 101)))
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()

@@ -144,6 +144,10 @@ class TestPredictions:
     def save(self):
         np.savez(os.path.join(self.dir, self.mode, self.name), **self.predictions)
 
+    def load_raw(self):
+        predictions = np.load(os.path.join(self.dir, self.mode, self.name) + '.npz')
+        return predictions
+
     def load(self):
         predictions = np.load(os.path.join(self.dir, self.mode, self.name) + '.npz')
         self.predictions = {id: predictions[id] for id in tqdm(predictions, leave=False, desc='Loading predictions for {}'.format(self.name))}
@@ -213,7 +217,7 @@ class ExperimentLogger:
     def set_split(self, i, stats):
         self.stats[i] = stats
 
-    def save(self):
+    def create_df(self):
         path_csv = os.path.join('./logs', 'experiments')
 
         average_meter = meters.AverageMeter()
@@ -225,14 +229,20 @@ class ExperimentLogger:
         df = df.rename_axis("experiment")
         if os.path.exists(path_csv):
             old_df = pd.read_csv(path_csv, sep=' ', index_col=0)
-            print(df)
-            print(old_df)
             df = pd.concat([df, old_df])
 
             df = df[~df.index.duplicated(keep='first')]
-            print(df)
 
         df = df.sort_values(by='val_mAP', ascending=False)
+
+        return df
+
+    def print(self):
+        df = self.create_df()
+        print(df)
+
+    def save(self):
+        df = self.create_df()
         df.to_csv(
             path_csv,
             index_label='experiment',

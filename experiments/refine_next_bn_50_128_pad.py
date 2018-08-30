@@ -11,7 +11,8 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refine_net_bn import RefineNet, ResNetBase
+from nets.refine_net_bn import RefineNet, ResNeXtBase
+from nets.senet import se_resnext50_32x4d
 from metrics import iou, mAP
 import datasets
 import utils
@@ -28,8 +29,8 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
-            resnet.resnet50(pretrained=True)),
+        self.net = RefineNet(
+            se_resnext50_32x4d(),
             num_features=128
         )
         self.tta = [
@@ -58,17 +59,6 @@ class Model:
         )
 
         pbar.update()
-
-    def predict_raw(self, net, images):
-        tta_masks = []
-        for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
-            masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
-            tta_masks.append(masks_predictions)
-
-        tta_masks = torch.stack(tta_masks, dim=0)
-
-        return tta_masks
 
     def predict(self, net, images):
         tta_masks = []
@@ -196,10 +186,7 @@ class Model:
         val_stats = {'val_' + k: v for k, v in average_meter_val.get_all().items()}
         return val_stats
 
-    def test(self, samples_test, dir_test='./data/test', predict=None):
-        if predict is None:
-            predict = self.predict
-
+    def test(self, samples_test, dir_test='./data/test'):
         net = DataParallel(self.net)
 
         transforms = generator.TransformationsGenerator([])
@@ -216,7 +203,7 @@ class Model:
 
             for images, ids in test_dataloader:
                 images = images.to(gpu)
-                masks_predictions = predict(net, images)
+                masks_predictions = self.predict(net, images)
 
                 pbar.set_description('Creating test predictions...')
                 pbar.update()
@@ -250,7 +237,6 @@ def main():
         test_predictions.save()
 
     experiment_logger.save()
-
 
 if __name__ == "__main__":
     main()
