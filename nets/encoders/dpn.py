@@ -7,7 +7,6 @@ many ideas from another PyTorch implementation https://github.com/oyam/pytorch-D
 This implementation is compatible with the pretrained weights
 from cypw's MXNet implementation.
 """
-import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -462,40 +461,3 @@ class AdaptiveAvgMaxPool2d(torch.nn.Module):
                + ', pool_type=' + self.pool_type + ')'
 
 
-class DPNBase(nn.Module):
-    def __init__(self, dpn):
-        super(DPNBase, self).__init__()
-        idx = 1
-        self.layer0 = dpn.features[0]
-
-        idx_layer = idx + dpn.k_sec[0]
-        self.layer1 = nn.Sequential(*dpn.features[idx:idx_layer])
-        self.out1 = CatBnAct(256 + 80)
-        idx = idx_layer
-
-        idx_layer = idx + dpn.k_sec[1]
-        self.layer2 = nn.Sequential(*dpn.features[idx:idx_layer])
-        self.out2 = CatBnAct(512+192)
-        idx = idx_layer
-
-        idx_layer = idx + dpn.k_sec[2]
-        self.layer3 = nn.Sequential(*dpn.features[idx:idx_layer])
-        self.out3 = CatBnAct(1024+528)
-        idx = idx_layer
-
-        idx_layer = idx + dpn.k_sec[3]
-        self.layer4 = nn.Sequential(*dpn.features[idx:idx_layer])
-        self.out4 = CatBnAct(2048 + 640)
-
-    def forward(self, x):
-        x = self.layer0(x)
-        x = self.layer1(x)
-        x1 = self.out1(x)
-        x = self.layer2(x)
-        x2 = self.out2(x)
-        x = self.layer3(x)
-        x3 = self.out3(x)
-        x = self.layer4(x)
-        x4 = self.out4(x)
-
-        return x1, x2, x3, x4

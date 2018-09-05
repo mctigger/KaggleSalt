@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, SCSERCU
 from nets.backbones import ResNetBase
+from nets.pspnet import PSPNet, AtrousPSPModule
 from metrics import iou, mAP
 import datasets
 import utils
@@ -28,10 +28,9 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
+        self.net = PSPNet(ResNetBase(
             resnet.resnet50(pretrained=True)),
-            num_features=128,
-            rcu=SCSERCU
+            module=AtrousPSPModule
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),

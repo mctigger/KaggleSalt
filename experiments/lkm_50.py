@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, SCSERCU
+from nets.lkm import LargeKernelMattersNet
 from nets.backbones import ResNetBase
 from metrics import iou, mAP
 import datasets
@@ -28,10 +28,8 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
-            resnet.resnet50(pretrained=True)),
-            num_features=128,
-            rcu=SCSERCU
+        self.net = LargeKernelMattersNet(
+            ResNetBase(resnet.resnet50(pretrained=True)),
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),

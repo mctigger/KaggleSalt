@@ -9,8 +9,9 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refine_net_bn import RefineNet
-from nets.dpn import dpn92, DPNBase
+from nets.refinenet import RefineNet
+from nets.encoders.dpn import dpn92
+from nets.backbones import DPNBase
 from metrics import iou, mAP
 import datasets
 import utils

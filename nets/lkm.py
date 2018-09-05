@@ -1,13 +1,14 @@
-import torch
 from torch import nn
 from torchvision.models.resnet import BasicBlock
+
+from .modules import SCSEBlock
 
 
 class BR(nn.Module):
     def __init__(self, channels):
         super(BR, self).__init__()
 
-        self.block = BasicBlock(channels, channels)
+        self.block = SCSEBlock(channels, channels)
 
     def forward(self, x):
         return self.block(x)
@@ -34,15 +35,18 @@ class GCN(nn.Module):
 
 
 class LargeKernelMattersNet(nn.Module):
-    def __init__(self, resnet):
+    def __init__(self, base, num_features_base=None):
         super(LargeKernelMattersNet, self).__init__()
-        k = 64
-        self.resnet = resnet
 
-        self.gcn_1 = GCN(4*64, k)
-        self.gcn_2 = GCN(4*128, k)
-        self.gcn_3 = GCN(4*256, k)
-        self.gcn_4 = GCN(4*512, k, kernel_size=3)
+        if num_features_base is None:
+            num_features_base = [256, 512, 1024, 2048]
+
+        k = 128
+
+        self.gcn_1 = GCN(num_features_base[0], k)
+        self.gcn_2 = GCN(num_features_base[1], k)
+        self.gcn_3 = GCN(num_features_base[2], k)
+        self.gcn_4 = GCN(num_features_base[3], k, kernel_size=3)
 
         self.br_1_a = BR(k)
         self.br_1_b = BR(k)
@@ -64,16 +68,10 @@ class LargeKernelMattersNet(nn.Module):
             nn.Conv2d(k, 1, kernel_size=1, stride=1, padding=0, bias=True)
         )
 
-    def forward(self, x):
-        x = self.resnet.conv1(x)
-        x = self.resnet.bn1(x)
-        x = self.resnet.relu(x)
-        x = self.resnet.maxpool(x)
+        self.base = base
 
-        x_1 = self.resnet.layer1(x)
-        x_2 = self.resnet.layer2(x_1)
-        x_3 = self.resnet.layer3(x_2)
-        x_4 = self.resnet.layer4(x_3)
+    def forward(self, x):
+        x_1, x_2, x_3, x_4 = self.base(x)
 
         x_1 = self.br_1_a(self.gcn_1(x_1))
         x_2 = self.br_2_a(self.gcn_2(x_2))

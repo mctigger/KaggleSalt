@@ -1,10 +1,7 @@
-import math
-
 from torch import nn
-from torch.nn import functional as F
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
-from nets.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
+from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
@@ -300,56 +297,6 @@ class RefineNet(nn.Module):
         return x
 
 
-class ResNetBase(nn.Module):
-    def __init__(self, resnet):
-        super(ResNetBase, self).__init__()
-        self.layer0 = nn.Sequential(
-            resnet.conv1,
-            resnet.bn1,
-            resnet.relu,
-            resnet.maxpool,
-        )
-
-        self.layer1 = resnet.layer1
-        self.layer2 = resnet.layer2
-        self.layer3 = resnet.layer3
-        self.layer4 = resnet.layer4
-
-    def forward(self, x):
-        x_0 = self.layer0(x)
-        x_1 = self.layer1(x_0)
-        x_2 = self.layer2(x_1)
-        x_3 = self.layer3(x_2)
-        x_4 = self.layer4(x_3)
-
-        return x_1, x_2, x_3, x_4
-
-
-class ResNeXtBase(nn.Module):
-    def __init__(self, resnet):
-        super(ResNeXtBase, self).__init__()
-        self.layer0 = nn.Sequential(
-            resnet.conv1,
-            resnet.bn1,
-            resnet.relu,
-            resnet.maxpool,
-        )
-
-        self.layer1 = resnet.layer1
-        self.layer2 = resnet.layer2
-        self.layer3 = resnet.layer3
-        self.layer4 = resnet.layer4
-
-    def forward(self, x):
-        x_0 = self.layer0(x)
-        x_1 = self.layer1(x_0)
-        x_2 = self.layer2(x_1)
-        x_3 = self.layer3(x_2)
-        x_4 = self.layer4(x_3)
-
-        return x_1, x_2, x_3, x_4
-
-
 class DilatedPyramidPooling(nn.Module):
     def __init__(self, channels):
         super(DilatedPyramidPooling, self).__init__()
@@ -392,12 +339,3 @@ class PyramidPooling(nn.Module):
         c = self.conv_c(x)
 
         return a + b + c + x
-
-
-class Identity(nn.Module):
-    def __init__(self, channels):
-        super(Identity, self).__init__()
-
-    def forward(self, x):
-
-        return x

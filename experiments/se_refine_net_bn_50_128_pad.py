@@ -10,7 +10,8 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refine_net_bn import RefineNet, ResNetBase, SERCU
+from nets.refinenet import RefineNet, SERCU
+from nets.backbones import ResNetBase
 from metrics import iou, mAP
 import datasets
 import utils

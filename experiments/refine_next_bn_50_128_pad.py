@@ -3,16 +3,14 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refine_net_bn import RefineNet, ResNeXtBase
-from nets.senet import se_resnext50_32x4d
+from nets.refinenet import RefineNet
+from nets.encoders.senet import se_resnext50_32x4d
 from metrics import iou, mAP
 import datasets
 import utils
