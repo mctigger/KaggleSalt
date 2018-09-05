@@ -131,7 +131,7 @@ class Model:
                 rotation=lambda rs: rs.randint(-10, 10),
                 **utils.transformations_options
             ),
-            random.RandomPadding(27, 27)
+            transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
         dataloader = DataLoader(

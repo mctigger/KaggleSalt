@@ -3,13 +3,12 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
 
-from ela import transformations, generator, random
+from ela import generator, random
 
 from nets.refine_net_bn import RefineNet, ResNetBase
 from metrics import iou, mAP
@@ -130,7 +129,6 @@ class Model:
                 scale=lambda rs: (rs.uniform(0.8, 1.2), 1),
                 **utils.transformations_options
             ),
-            random.RandomDistortion(4, 4, 0.2, 0.2, **utils.transformations_options),
             random.RandomPadding(27, 27)
         ])
 

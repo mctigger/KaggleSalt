@@ -5,6 +5,48 @@ from torch.nn import BCELoss, BCEWithLogitsLoss
 import loss_lovasz
 
 
+class mAPLoss(nn.Module):
+    def __init__(self):
+        super(mAPLoss, self).__init__()
+
+        self.lovasz = LovaszWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        thresholds = [0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+        iou_loss = self.lovasz(prediction, target)
+        iou = 1 - iou_loss
+
+        loss = 0
+        for t in thresholds:
+            loss += torch.max(t - iou * t, iou.new_tensor(0)) * iou_loss
+
+        loss += 5 * torch.max(0.5 - iou * 0.5, iou.new_tensor(0)) * iou_loss
+
+        return loss / 10
+
+
+
+class mAPLoss2(nn.Module):
+    def __init__(self):
+        super(mAPLoss2, self).__init__()
+
+        self.lovasz = SoftDiceWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        thresholds = [0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
+        iou_loss = self.lovasz(prediction, target)
+        iou = 1 - iou_loss
+
+        loss = 0
+        for t in thresholds:
+            loss += torch.max(t - iou * t, iou.new_tensor(0)) * iou_loss
+
+        loss += 5 * torch.max(0.5 - iou * 0.5, iou.new_tensor(0)) * iou_loss
+
+        return loss / 10
+
+
+
 class SoftDiceBCELoss(nn.Module):
     def __init__(self):
         super(SoftDiceBCELoss, self).__init__()
@@ -35,6 +77,14 @@ class LovaszWithLogitsLoss(nn.Module):
         return loss_lovasz.lovasz_hinge(prediction, target, per_image=True)
 
 
+class SmoothLovaszWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(SmoothLovaszWithLogitsLoss, self).__init__()
+
+    def forward(self, prediction, target):
+        return loss_lovasz.lovasz_hinge_elu(prediction, target, per_image=True)
+
+
 class LovaszBCEWithLogitsLoss(nn.Module):
     def __init__(self):
         super(LovaszBCEWithLogitsLoss, self).__init__()
@@ -43,6 +93,17 @@ class LovaszBCEWithLogitsLoss(nn.Module):
 
     def forward(self, prediction, target):
         return self.bce(prediction, target) + loss_lovasz.lovasz_hinge(prediction, target, per_image=True)
+
+
+class SmoothLovaszBCEWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(SmoothLovaszBCEWithLogitsLoss, self).__init__()
+
+        self.bce = BCEWithLogitsLoss()
+        self.lovasz = SmoothLovaszWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        return self.bce(prediction, target) + self.lovasz(prediction, target)
 
 
 class SoftDicePerImageBCEWithLogitsLoss(nn.Module):
@@ -101,8 +162,6 @@ class SoftDicePerImageLoss(nn.Module):
         intersection = (iflat * tflat).sum(dim=1)
 
         a = 1 - ((2. * intersection + smooth) / (iflat.sum(dim=1) + tflat.sum(dim=1) + smooth))
-
-        print(a)
 
         return torch.mean(a)
 

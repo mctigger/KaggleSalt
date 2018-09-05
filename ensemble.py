@@ -13,8 +13,8 @@ def ensemble_vote(p):
 
 
 
-experiments = ['refine_next_bn_50_128_pad']
-ensemble_name = 'refine_next_bn_50_128_pad'
+experiments = ['refine_net_bn_50_128_pad_semisupervised']
+ensemble_name = 'refine_net_bn_50_128_pad_semisupervised'
 
 test_predictions_experiment = []
 

@@ -7,7 +7,6 @@ from torch.utils.data import Dataset
 from torchvision.transforms import ToTensor
 from skimage.io import imread
 from skimage import img_as_float
-from scipy.misc import imshow
 
 
 class ImageDataset(Dataset):
@@ -64,6 +63,7 @@ class StackingDataset(Dataset):
         model_predictions = [p[id] for p in self.predictions]
         image = np.concatenate(model_predictions, axis=0)
         image = np.moveaxis(image, 0, -1)
+        image = np.concatenate((img_as_float(imread(join(self.path, 'images', id) + '.png')), image), axis=2)
 
         t = next(self.transforms)
 
@@ -99,7 +99,7 @@ class ImageDatasetRemoveSmall(Dataset):
     def __getitem__(self, index):
         id = self.samples[index]
 
-        image = imread(join(self.path, 'images', id) + '.png')
+        image = img_as_float(imread(join(self.path, 'images', id) + '.png'))
 
         t = next(self.transforms)
 
@@ -125,7 +125,10 @@ class ImageDatasetRemoveSmall(Dataset):
 
 
 class SemiSupervisedImageDataset(Dataset):
-    def __init__(self, samples, path, transforms, size, momentum=0, test_predictions=None):
+    def __init__(self, samples, path, transforms, size=None, momentum=0, test_predictions=None):
+        if size is None:
+            size = len(samples)
+
         self.samples = samples
         self.path = path
         self.transforms = transforms
@@ -150,7 +153,7 @@ class SemiSupervisedImageDataset(Dataset):
     def __getitem__(self, index):
         id = self.samples[index]
 
-        image = imread(join(self.path, 'images', id) + '.png')
+        image = img_as_float(imread(join(self.path, 'images', id) + '.png'))
 
         t = next(self.transforms)
 
@@ -162,3 +165,17 @@ class SemiSupervisedImageDataset(Dataset):
         mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
 
         return image, mask
+
+
+class RandomSubsetDataset(Dataset):
+    def __init__(self, dataset, n):
+        self.dataset = dataset
+        self.n = n
+
+    def __len__(self):
+        return self.n
+
+    def __getitem__(self, index):
+        real_index = np.random.randint(0, len(self.dataset))
+
+        return self.dataset[real_index]

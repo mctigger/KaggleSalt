@@ -3,9 +3,8 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torchvision.models import resnet
 from tqdm import tqdm
 
@@ -21,6 +20,8 @@ import tta
 
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
+
+samples_test = utils.get_test_samples()
 
 
 class Model:
@@ -94,6 +95,26 @@ class Model:
 
         epochs = 200
 
+        transforms = generator.TransformationsGenerator([
+            random.RandomFlipLr(),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
+                **utils.transformations_options
+            ),
+            transformations.Padding(((13, 14), (13, 14), (0, 0)))
+        ])
+
+        pseudo_dataset = datasets.SemiSupervisedImageDataset(
+            samples_test,
+            './data/test',
+            transforms,
+            size=2000,
+            test_predictions=utils.TestPredictions('ensemble 5').load(),
+            momentum=0.0
+        )
+
         best_val_mAP = 0
         best_stats = None
 
@@ -104,7 +125,7 @@ class Model:
         for e in range(epochs):
             lr_scheduler.step(e)
 
-            stats_train = self.train(net, samples_train, optimizer, e)
+            stats_train = self.train(net, samples_train, optimizer, e, pseudo_dataset)
             stats_val = self.validate(net, samples_val, e)
 
             stats = {**stats_train, **stats_val}
@@ -121,7 +142,7 @@ class Model:
 
         return best_stats
 
-    def train(self, net, samples, optimizer, e):
+    def train(self, net, samples, optimizer, e, pseudo_dataset):
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -134,8 +155,9 @@ class Model:
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
+
         dataloader = DataLoader(
-            dataset,
+            ConcatDataset([pseudo_dataset, dataset]),
             num_workers=10,
             batch_size=32,
             shuffle=True

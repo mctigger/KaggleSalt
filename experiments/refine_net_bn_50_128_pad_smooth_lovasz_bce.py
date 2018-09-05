@@ -37,7 +37,7 @@ class Model:
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
-        self.criterion = losses.LovaszBCEWithLogitsLoss()
+        self.criterion = losses.SmoothLovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)

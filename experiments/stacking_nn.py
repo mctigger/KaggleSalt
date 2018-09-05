@@ -11,6 +11,8 @@ from tqdm import tqdm
 from ela import transformations, generator, random
 
 from nets.u_net import UNet
+from nets.u_resnet import UResNet
+from nets.resnet import ResNet, BasicBlock
 from metrics import iou, mAP
 import datasets
 import utils
@@ -29,10 +31,9 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = UNet(10)
+        self.net = UResNet(ResNet(BasicBlock, [2, 2, 2, 2], in_channels=10+3), layers=[2, 2, 2, 2])
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
-            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
         self.criterion = losses.LovaszBCEWithLogitsLoss()
@@ -85,9 +86,9 @@ class Model:
 
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            10: (0.5e-4, 1e-6),
-            20: (1e-4, 1e-6),
+            0: (1e-3, 1e-3),
+            10: (0.5e-3, 1e-3),
+            20: (1e-4, 1e-4),
         })
 
         epochs = 30
@@ -121,7 +122,15 @@ class Model:
 
     def train(self, net, samples, optimizer, e):
         transforms = generator.TransformationsGenerator([
-            transformations.Padding(((13, 14), (13, 14), (0, 0)))
+            random.RandomFlipLr(),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
+                rotation=lambda rs: rs.randint(-10, 10),
+                **utils.transformations_options
+            ),
+            random.RandomPadding(27, 27)
         ])
 
         dataset = datasets.StackingDataset(samples, './data/train', transforms, predictions)
@@ -224,6 +233,9 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+        if i < 2:
+            continue
+
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
@@ -232,12 +244,12 @@ def main():
         model.load()
 
         # Do a final validation
-        model.validate(DataParallel(model.net), samples_val, -1)
+        #model.validate(DataParallel(model.net), samples_val, -1)
 
         # Predict the test data
-        test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
-        test_predictions.add_predictions(model.test(utils.get_test_samples()))
-        test_predictions.save()
+        #test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
+        #test_predictions.add_predictions(model.test(utils.get_test_samples()))
+        #test_predictions.save()
 
     experiment_logger.save()
 

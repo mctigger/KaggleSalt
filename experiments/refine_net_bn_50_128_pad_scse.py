@@ -3,7 +3,6 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
@@ -11,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refine_net_bn import RefineNet, ResNetBase
+from nets.refine_net_bn import RefineNet, ResNetBase, SCSERCU
 from metrics import iou, mAP
 import datasets
 import utils
@@ -30,7 +29,8 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(ResNetBase(
             resnet.resnet50(pretrained=True)),
-            num_features=128
+            num_features=128,
+            rcu=SCSERCU
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),

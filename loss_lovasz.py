@@ -111,6 +111,42 @@ def lovasz_hinge_flat(logits, labels):
     return loss
 
 
+def lovasz_hinge_elu(logits, labels, per_image=True, ignore=None):
+    """
+    Binary Lovasz hinge loss
+      logits: [B, H, W] Variable, logits at each pixel (between -\infty and +\infty)
+      labels: [B, H, W] Tensor, binary ground truth masks (0 or 1)
+      per_image: compute the loss per image instead of per batch
+      ignore: void class id
+    """
+    if per_image:
+        loss = mean(lovasz_hinge_flat_elu(*flatten_binary_scores(log.unsqueeze(0), lab.unsqueeze(0), ignore))
+                          for log, lab in zip(logits, labels))
+    else:
+        loss = lovasz_hinge_flat_elu(*flatten_binary_scores(logits, labels, ignore))
+    return loss
+
+
+def lovasz_hinge_flat_elu(logits, labels):
+    """
+    Binary Lovasz hinge loss
+      logits: [P] Variable, logits at each prediction (between -\infty and +\infty)
+      labels: [P] Tensor, binary ground truth labels (0 or 1)
+      ignore: label to ignore
+    """
+    if len(labels) == 0:
+        # only void pixels, the gradients should be 0
+        return logits.sum() * 0.
+    signs = 2. * labels.float() - 1.
+    errors = (1. - logits * Variable(signs))
+    errors_sorted, perm = torch.sort(errors, dim=0, descending=True)
+    perm = perm.data
+    gt_sorted = labels[perm]
+    grad = lovasz_grad(gt_sorted)
+    loss = torch.dot(F.elu(errors_sorted) + 1, Variable(grad))
+    return loss
+
+
 def flatten_binary_scores(scores, labels, ignore=None):
     """
     Flattens predictions in the batch (binary case)
