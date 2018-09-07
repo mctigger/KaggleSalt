@@ -18,6 +18,9 @@ import meters
 import metrics
 
 
+pd.options.display.float_format = '{:,.4f}'.format
+
+
 def get_train_samples():
     return np.array([path[:-4] for path in os.listdir('./data/train/images')])
 
@@ -234,7 +237,7 @@ class ExperimentLogger:
             if self.mode == 'val':
                 old_df = old_df[['val_iou', 'val_mAP']]
 
-            df = pd.concat([df, old_df], sort=False)
+            df = pd.concat([df, old_df])
 
             df = df[~df.index.duplicated(keep='first')]
 

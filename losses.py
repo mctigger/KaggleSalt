@@ -82,17 +82,38 @@ class SmoothLovaszWithLogitsLoss(nn.Module):
         super(SmoothLovaszWithLogitsLoss, self).__init__()
 
     def forward(self, prediction, target):
+        return loss_lovasz.lovasz_hinge_smooth(prediction, target, per_image=True)
+
+
+class ELULovaszWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(ELULovaszWithLogitsLoss, self).__init__()
+
+    def forward(self, prediction, target):
         return loss_lovasz.lovasz_hinge_elu(prediction, target, per_image=True)
 
 
 class LovaszBCEWithLogitsLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, weight_bce, weight_lovasz):
         super(LovaszBCEWithLogitsLoss, self).__init__()
+        self.weight_bce = weight_bce
+        self.weight_lovasz = weight_lovasz
 
         self.bce = BCEWithLogitsLoss()
 
     def forward(self, prediction, target):
-        return self.bce(prediction, target) + loss_lovasz.lovasz_hinge(prediction, target, per_image=True)
+        return self.bce(prediction, target) * self.weight_bce + loss_lovasz.lovasz_hinge(prediction, target, per_image=True) * self.weight_lovasz
+
+
+class ELULovaszBCEWithLogitsLoss(nn.Module):
+    def __init__(self):
+        super(ELULovaszBCEWithLogitsLoss, self).__init__()
+
+        self.bce = BCEWithLogitsLoss()
+        self.lovasz = ELULovaszWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        return self.bce(prediction, target) + self.lovasz(prediction, target)
 
 
 class SmoothLovaszBCEWithLogitsLoss(nn.Module):

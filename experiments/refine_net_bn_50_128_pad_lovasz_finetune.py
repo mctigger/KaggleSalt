@@ -38,7 +38,6 @@ class Model:
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
-        self.criterion = losses.ELULovaszWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -123,6 +122,9 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
+        alpha = 2 * ((200 - e) / 200)
+        criterion = losses.LovaszBCEWithLogitsLoss(alpha, 2 - alpha)
+
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -151,7 +153,7 @@ class Model:
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = net(images)
 
-                loss = self.criterion(masks_predictions, masks_targets)
+                loss = criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
