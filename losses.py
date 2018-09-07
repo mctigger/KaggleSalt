@@ -94,7 +94,7 @@ class ELULovaszWithLogitsLoss(nn.Module):
 
 
 class LovaszBCEWithLogitsLoss(nn.Module):
-    def __init__(self, weight_bce, weight_lovasz):
+    def __init__(self, weight_bce=1, weight_lovasz=1):
         super(LovaszBCEWithLogitsLoss, self).__init__()
         self.weight_bce = weight_bce
         self.weight_lovasz = weight_lovasz
@@ -103,6 +103,18 @@ class LovaszBCEWithLogitsLoss(nn.Module):
 
     def forward(self, prediction, target):
         return self.bce(prediction, target) * self.weight_bce + loss_lovasz.lovasz_hinge(prediction, target, per_image=True) * self.weight_lovasz
+
+
+class LovaszFocalWithLogitsLoss(nn.Module):
+    def __init__(self, weight_focal=1, weight_lovasz=1):
+        super(LovaszFocalWithLogitsLoss, self).__init__()
+        self.weight_focal= weight_focal
+        self.weight_lovasz = weight_lovasz
+
+        self.focal = FocalLoss2d()
+
+    def forward(self, prediction, target):
+        return self.focal(prediction, target) * self.weight_focal + loss_lovasz.lovasz_hinge(prediction, target, per_image=True) * self.weight_lovasz
 
 
 class ELULovaszBCEWithLogitsLoss(nn.Module):
