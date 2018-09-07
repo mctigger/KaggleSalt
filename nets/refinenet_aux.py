@@ -285,10 +285,10 @@ class RefineNet(nn.Module):
 
         self.encoder = encoder
 
-        self.aux_3 = RefineNetUpsampleClassifier(num_features[0], scale_factor=32)
-        self.aux_2 = RefineNetUpsampleClassifier(num_features[1], scale_factor=16)
-        self.aux_1 = RefineNetUpsampleClassifier(num_features[2], scale_factor=8)
-        self.aux_0 = RefineNetUpsampleClassifier(num_features[3], scale_factor=4)
+        self.aux_3 = RefineNetUpsampleClassifier(num_features[0], scale_factor=1)
+        self.aux_2 = RefineNetUpsampleClassifier(num_features[1], scale_factor=1)
+        self.aux_1 = RefineNetUpsampleClassifier(num_features[2], scale_factor=1)
+        self.aux_0 = RefineNetUpsampleClassifier(num_features[3], scale_factor=1)
 
     def forward(self, x):
         x_0, x_1, x_2, x_3 = self.encoder(x)

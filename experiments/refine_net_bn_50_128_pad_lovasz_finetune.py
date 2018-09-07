@@ -87,7 +87,7 @@ class Model:
 
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
+            0: (2.5e-4, 1e-6),
             100: (0.5e-4, 1e-6),
             160: (1e-5, 1e-6),
         })
@@ -122,8 +122,8 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * ((200 - e) / 200)
-        criterion = losses.LovaszBCEWithLogitsLoss(alpha, 2 - alpha)
+        alpha = (120 - e)
+        criterion = losses.LovaszBCEWithLogitsLoss()
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),

@@ -3,16 +3,15 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet_aux import RefineNet
-from nets.backbones import ResNetBase
+from nets.refinenet_hypercolumn import RefineNet
+from nets.encoders.dpn import dpn92
+from nets.backbones import DPNBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -29,9 +28,11 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
-            resnet.resnet50(pretrained=True)),
-            num_features=128
+        self.net = RefineNet(
+            DPNBase(dpn92()),
+            num_features=128,
+            block_multiplier=1,
+            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640]
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -74,7 +75,7 @@ class Model:
     def predict(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))[0]
+            masks_predictions = net(tta.transform_forward(images))
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
@@ -149,17 +150,9 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions, aux_0, aux_1, aux_2, aux_3 = net(images)
+                masks_predictions = net(images)
 
-                loss = self.criterion(masks_predictions, masks_targets)\
-                    + self.criterion(F.upsample(aux_0, scale_factor=4, mode='bilinear'), masks_targets)\
-                    + self.criterion(F.upsample(aux_1, scale_factor=8, mode='bilinear'), masks_targets)\
-                    + self.criterion(F.upsample(aux_2, scale_factor=16, mode='bilinear'), masks_targets)\
-                    + self.criterion(F.upsample(aux_3, scale_factor=32, mode='bilinear'), masks_targets)
-
-                loss = loss / 4
-
-
+                loss = self.criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -182,7 +175,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -217,7 +210,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
