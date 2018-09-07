@@ -210,9 +210,10 @@ class EpochLogger:
 
 
 class ExperimentLogger:
-    def __init__(self, name):
+    def __init__(self, name, mode='train'):
         self.name = name
         self.stats = {}
+        self.mode = mode
 
     def set_split(self, i, stats):
         self.stats[i] = stats
@@ -228,8 +229,12 @@ class ExperimentLogger:
         df = pd.DataFrame(average_meter.get_all(), index=[self.name])
         df = df.rename_axis("experiment")
         if os.path.exists(path_csv):
-            old_df = pd.read_csv(path_csv, sep=' ', index_col=0)
-            df = pd.concat([df, old_df])
+            old_df = pd.read_csv(path_csv, delim_whitespace=True, index_col=0)
+            print(old_df)
+            if self.mode == 'val':
+                old_df = old_df[['val_iou', 'val_mAP']]
+
+            df = pd.concat([df, old_df], sort=False)
 
             df = df[~df.index.duplicated(keep='first')]
 

@@ -12,9 +12,11 @@ def ensemble_vote(p):
     return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
 
 
+experiments = [
+    'pspnet_50_atrous'
+]
 
-experiments = ['refine_net_bn_50_128_pad_semisupervised']
-ensemble_name = 'refine_net_bn_50_128_pad_semisupervised'
+ensemble_name = 'pspnet_50_atrous'
 
 test_predictions_experiment = []
 
@@ -22,7 +24,7 @@ for name in experiments:
     test_predictions_split = []
     for i in range(0, 5):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
-        test_predictions_split.append(test_predictions.load())
+        test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)
 
 test_samples = utils.get_test_samples()

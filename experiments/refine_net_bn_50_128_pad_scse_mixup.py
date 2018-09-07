@@ -4,13 +4,13 @@ import pathlib
 import torch
 from torch.nn import DataParallel
 from torch.optim import Adam
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader
 from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet
+from nets.refinenet import RefineNet, SCSERCU
 from nets.backbones import ResNetBase
 from metrics import iou, mAP
 import datasets
@@ -22,8 +22,6 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
-samples_test = utils.get_test_samples()
-
 
 class Model:
     def __init__(self, name, split):
@@ -32,7 +30,8 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(ResNetBase(
             resnet.resnet50(pretrained=True)),
-            num_features=128
+            num_features=128,
+            rcu=SCSERCU
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -90,42 +89,11 @@ class Model:
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
+            80: (0.5e-4, 1e-6),
+            140: (1e-5, 1e-6),
         })
 
-        epochs = 200
-
-        transforms = generator.TransformationsGenerator([
-            random.RandomFlipLr(),
-            random.RandomAffine(
-                image_size=101,
-                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
-                scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
-                **utils.transformations_options
-            ),
-            transformations.Padding(((13, 14), (13, 14), (0, 0)))
-        ])
-
-        pseudo_dataset = datasets.SemiSupervisedImageDataset(
-            samples_test,
-            './data/test',
-            transforms,
-            size=2000,
-            test_predictions=utils.TestPredictions('ensemble').load(),
-            momentum=0.25
-        )
-
-        """
-        pseudo_dataset = datasets.RandomSubsetDataset(datasets.SemiSupervisedImageDataset(
-            samples_test,
-            './data/test',
-            transforms,
-            size=2000,
-            test_predictions=utils.TestPredictions('ensemble').load(),
-            momentum=0.25
-        ), 2000)
-        """
+        epochs = 160
 
         best_val_mAP = 0
         best_stats = None
@@ -137,7 +105,7 @@ class Model:
         for e in range(epochs):
             lr_scheduler.step(e)
 
-            stats_train = self.train(net, samples_train, optimizer, e, pseudo_dataset)
+            stats_train = self.train(net, samples_train, optimizer, e)
             stats_val = self.validate(net, samples_val, e)
 
             stats = {**stats_train, **stats_val}
@@ -154,7 +122,7 @@ class Model:
 
         return best_stats
 
-    def train(self, net, samples, optimizer, e, pseudo_dataset):
+    def train(self, net, samples, optimizer, e):
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -167,12 +135,8 @@ class Model:
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
-
-        if e > 120:
-            pseudo_dataset.set_masks(self.test(samples_test))
-
         dataloader = DataLoader(
-            ConcatDataset([pseudo_dataset, dataset]),
+            dataset,
             num_workers=10,
             batch_size=32,
             shuffle=True
@@ -180,10 +144,14 @@ class Model:
 
         average_meter_train = meters.AverageMeter()
 
+        mixup = utils.MixUp(0.2 * (140 - e) / 140)
+
         with tqdm(total=len(dataloader), leave=False) as pbar, torch.enable_grad():
             net.train()
 
             for images, masks_targets in dataloader:
+                images, masks_targets = mixup(images, masks_targets)
+
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = net(images)
 

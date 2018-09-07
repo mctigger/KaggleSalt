@@ -1,4 +1,6 @@
+import torch
 from torch import nn
+from torch.nn import functional as F
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
@@ -117,7 +119,7 @@ class SCSERCU(nn.Module):
         super(SCSERCU, self).__init__()
         self.conv1 = conv3x3(in_channels, out_channels, stride)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.elu = nn.ELU(inplace=True)
+        self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(out_channels, out_channels)
         self.bn2 = nn.BatchNorm2d(out_channels)
         self.downsample = downsample
@@ -127,18 +129,18 @@ class SCSERCU(nn.Module):
     def forward(self, x):
         residual = x
 
-        out = self.bn1(x)
-        out = self.elu(out)
-        out = self.conv1(out)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
 
-        out = self.bn2(out)
-        out = self.elu(out)
         out = self.conv2(out)
+        out = self.bn2(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out = self.scse_module(out) + residual
+        out = self.relu(out)
 
         return out
 
@@ -280,19 +282,24 @@ class RefineNet(nn.Module):
         self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
         self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
 
-        self.classifier = classifier(num_features[3]*rcu.multiplier)
+        self.classifier = classifier(num_features[3]*rcu.multiplier * 5)
 
         self.encoder = encoder
 
     def forward(self, x):
         x_0, x_1, x_2, x_3 = self.encoder(x)
 
-        x = self.refine_0([x_3])
-        x = self.refine_1([x_2, x])
-        x = self.refine_2([x_1, x])
-        x = self.refine_3([x_0, x])
+        r_0 = self.refine_0([x_3])
+        r_1 = self.refine_1([x_2, r_0])
+        r_2 = self.refine_2([x_1, r_1])
+        r_3 = self.refine_3([x_0, r_2])
 
-        x = self.classifier(x)
+        x = self.classifier(torch.cat([
+        	F.upsample(r_0, scale_factor=8, mode='bilinear'),
+        	F.upsample(r_1, scale_factor=4, mode='bilinear'), 
+        	F.upsample(r_2, scale_factor=2, mode='bilinear'), 
+        	r_3
+    	], dim=1))
 
         return x
 
