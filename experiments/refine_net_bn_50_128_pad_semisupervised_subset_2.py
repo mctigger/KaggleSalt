@@ -3,9 +3,8 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from torchvision.models import resnet
 from tqdm import tqdm
 
@@ -23,6 +22,8 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
+samples_test = utils.get_test_samples()
+
 
 class Model:
     def __init__(self, name, split):
@@ -38,6 +39,7 @@ class Model:
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
+        self.criterion = losses.LovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -94,6 +96,26 @@ class Model:
 
         epochs = 200
 
+        transforms = generator.TransformationsGenerator([
+            random.RandomFlipLr(),
+            random.RandomAffine(
+                image_size=101,
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
+                **utils.transformations_options
+            ),
+            transformations.Padding(((13, 14), (13, 14), (0, 0)))
+        ])
+
+        pseudo_dataset = datasets.SemiSupervisedImageDataset(
+            samples_test,
+            './data/test',
+            transforms,
+            size=len(samples_test),
+            test_predictions=utils.TestPredictions('ensemble').load(),
+            momentum=0.0
+        )
+
         best_val_mAP = 0
         best_stats = None
 
@@ -104,7 +126,7 @@ class Model:
         for e in range(epochs):
             lr_scheduler.step(e)
 
-            stats_train = self.train(net, samples_train, optimizer, e)
+            stats_train = self.train(net, samples_train, optimizer, e, pseudo_dataset)
             stats_val = self.validate(net, samples_val, e)
 
             stats = {**stats_train, **stats_val}
@@ -121,10 +143,7 @@ class Model:
 
         return best_stats
 
-    def train(self, net, samples, optimizer, e):
-        alpha = 2 * ((200 - e) / 200)
-        criterion = losses.LovaszBCEWithLogitsLoss(alpha, 2 - alpha)
-
+    def train(self, net, samples, optimizer, e, pseudo_dataset):
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -137,11 +156,13 @@ class Model:
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
+
+        weights = [len(pseudo_dataset) / len(dataset) * 2]*len(dataset) + [1]*len(pseudo_dataset)
         dataloader = DataLoader(
-            dataset,
+            ConcatDataset([dataset, pseudo_dataset]),
             num_workers=10,
             batch_size=32,
-            shuffle=True
+            sampler=WeightedRandomSampler(weights=weights, num_samples=3200)
         )
 
         average_meter_train = meters.AverageMeter()
@@ -153,7 +174,7 @@ class Model:
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = net(images)
 
-                loss = criterion(masks_predictions, masks_targets)
+                loss = self.criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()

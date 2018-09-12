@@ -233,7 +233,6 @@ class ExperimentLogger:
         df = df.rename_axis("experiment")
         if os.path.exists(path_csv):
             old_df = pd.read_csv(path_csv, delim_whitespace=True, index_col=0)
-            print(old_df)
             if self.mode == 'val':
                 old_df = old_df[['val_iou', 'val_mAP']]
 

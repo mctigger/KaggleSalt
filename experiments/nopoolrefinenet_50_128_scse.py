@@ -3,7 +3,6 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
@@ -11,8 +10,8 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet
-from nets.backbones import ResNetBase
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERCU
+from nets.backbones import NoPoolResNetBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -29,9 +28,11 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
+        self.net = RefineNet(NoPoolResNetBase(
             resnet.resnet50(pretrained=True)),
-            num_features=128
+            num_features=128,
+            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
+            rcu=SCSERCU
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -122,8 +123,8 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 0.8
-        criterion = losses.LovaszBCEWithLogitsLoss(alpha, 2 - alpha)
+        alpha = 2 * max(0, ((100 - e) / 100))
+        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),

@@ -4,19 +4,23 @@ from tqdm import tqdm
 import utils
 
 
-def ensemble_mean(p):
-    return np.mean(np.mean(p, axis=0) > 0.5, axis=0)
+def ensemble_mean(p, threshold=0.5):
+    return np.mean(np.mean(p, axis=0) > threshold, axis=0)
 
 
 def ensemble_vote(p):
     return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
 
+def ensemble_mean_mean(p):
+    return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
 experiments = [
-    'pspnet_50_atrous'
+    'nopoollkm_50_lovasz_elu_focal_finetune',
+    'nopoolrefinenet_50_128_lovasz_elu_focal_finetune',
+    'refine_net_bn_50_128_pad_semisupervised_subset'
 ]
 
-ensemble_name = 'pspnet_50_atrous'
+ensemble_name = 'ensemble_mean_mean'
 
 test_predictions_experiment = []
 
@@ -39,7 +43,7 @@ for id in tqdm(test_samples):
         p.append(test_predictions_split)
     p = np.stack(p, axis=0)
 
-    prediction_ensemble = ensemble_mean(p)
+    prediction_ensemble = ensemble_mean_mean(p)
     predictions_mean.append((prediction_ensemble, id))
 
 # Save ensembled predictions (for example for pseudo-labeling)

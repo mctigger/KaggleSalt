@@ -4,7 +4,7 @@ import pathlib
 import torch
 from torch.nn import DataParallel
 from torch.optim import Adam
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from torchvision.models import resnet
 from tqdm import tqdm
 
@@ -111,21 +111,10 @@ class Model:
             samples_test,
             './data/test',
             transforms,
-            size=2000,
-            test_predictions=utils.TestPredictions('ensemble').load(),
-            momentum=0.25
+            size=len(samples_test),
+            test_predictions=utils.TestPredictions('nopoolrefinenet_50_128_lovasz_elu_focal_finetune').load(),
+            momentum=0.0
         )
-
-        """
-        pseudo_dataset = datasets.RandomSubsetDataset(datasets.SemiSupervisedImageDataset(
-            samples_test,
-            './data/test',
-            transforms,
-            size=2000,
-            test_predictions=utils.TestPredictions('ensemble').load(),
-            momentum=0.25
-        ), 2000)
-        """
 
         best_val_mAP = 0
         best_stats = None
@@ -168,15 +157,15 @@ class Model:
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
 
-        if e > 120:
-            pseudo_dataset.set_masks(self.test(samples_test))
-
+        weights = [len(pseudo_dataset) / len(dataset)]*len(dataset) + [1]*len(pseudo_dataset)
+        print(len(weights))
         dataloader = DataLoader(
-            ConcatDataset([pseudo_dataset, dataset]),
+            ConcatDataset([dataset, pseudo_dataset]),
             num_workers=10,
             batch_size=32,
-            shuffle=True
+            sampler=WeightedRandomSampler(weights=weights, num_samples=3200)
         )
+        exit()
 
         average_meter_train = meters.AverageMeter()
 

@@ -118,14 +118,29 @@ class LovaszFocalWithLogitsLoss(nn.Module):
 
 
 class ELULovaszBCEWithLogitsLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, weight_bce=1, weight_lovasz=1):
         super(ELULovaszBCEWithLogitsLoss, self).__init__()
+        self.weight_bce = weight_bce
+        self.weight_lovasz = weight_lovasz
 
         self.bce = BCEWithLogitsLoss()
         self.lovasz = ELULovaszWithLogitsLoss()
 
     def forward(self, prediction, target):
-        return self.bce(prediction, target) + self.lovasz(prediction, target)
+        return self.bce(prediction, target) * self.weight_bce + self.lovasz(prediction, target) * self.weight_lovasz
+
+
+class ELULovaszFocalWithLogitsLoss(nn.Module):
+    def __init__(self, weight_focal=1, weight_lovasz=1):
+        super(ELULovaszFocalWithLogitsLoss, self).__init__()
+        self.weight_focal = weight_focal
+        self.weight_lovasz = weight_lovasz
+
+        self.focal = FocalLoss2d()
+        self.lovasz = ELULovaszWithLogitsLoss()
+
+    def forward(self, prediction, target):
+        return self.focal(prediction, target) * self.weight_focal + self.lovasz(prediction, target) * self.weight_lovasz
 
 
 class SmoothLovaszBCEWithLogitsLoss(nn.Module):

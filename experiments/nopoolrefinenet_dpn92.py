@@ -7,10 +7,11 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ela import generator, random
+from ela import transformations, generator, random
 
-from nets.unet import UResNet
-from nets.encoders.resnet import ResNet, BasicBlock
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier
+from nets.backbones import NoPoolDPNBase
+from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
 import datasets
 import utils
@@ -21,20 +22,24 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
-predictions = [utils.TestPredictions('refine_net_bn_50_128_pad', mode='val').load()]
-
 
 class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = UResNet(ResNet(BasicBlock, [2, 2, 2, 2], in_channels=10+3), layers=[2, 2, 2, 2])
+        self.net = RefineNet(
+            NoPoolDPNBase(dpn92()),
+            num_features=128,
+            block_multiplier=1,
+            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
+            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+        )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
+            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
-        self.criterion = losses.LovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -60,10 +65,10 @@ class Model:
         tta_masks = []
         for tta in self.tta:
             masks_predictions = net(tta.transform_forward(images))
-            masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
+            masks_predictions = tta.transform_backward(masks_predictions)
             tta_masks.append(masks_predictions)
 
-        tta_masks = torch.stack(tta_masks, dim=0)
+        tta_masks = torch.stack(tta_masks, dim=1)
 
         return tta_masks
 
@@ -84,12 +89,12 @@ class Model:
 
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-3, 1e-3),
-            10: (0.5e-3, 1e-3),
-            20: (1e-4, 1e-4),
+            0: (1e-4, 1e-6),
+            100: (0.5e-4, 1e-6),
+            160: (1e-5, 1e-6),
         })
 
-        epochs = 30
+        epochs = 200
 
         best_val_mAP = 0
         best_stats = None
@@ -119,23 +124,25 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
+        alpha = 2 * max(0, ((100 - e) / 100))
+        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
+
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
                 translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
-                rotation=lambda rs: rs.randint(-10, 10),
                 **utils.transformations_options
             ),
-            random.RandomPadding(27, 27)
+            transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
-        dataset = datasets.StackingDataset(samples, './data/train', transforms, predictions)
+        dataset = datasets.ImageDataset(samples, './data/train', transforms)
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64,
+            batch_size=16,
             shuffle=True
         )
 
@@ -148,7 +155,7 @@ class Model:
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = net(images)
 
-                loss = self.criterion(masks_predictions, masks_targets)
+                loss = criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -167,11 +174,11 @@ class Model:
 
     def validate(self, net, samples, e):
         transforms = generator.TransformationsGenerator([])
-        dataset = datasets.StackingDataset(samples, './data/train', transforms, predictions)
+        dataset = datasets.ImageDataset(samples, './data/train', transforms)
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -206,7 +213,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
@@ -239,12 +246,12 @@ def main():
         model.load()
 
         # Do a final validation
-        #model.validate(DataParallel(model.net), samples_val, -1)
+        model.validate(DataParallel(model.net), samples_val, -1)
 
         # Predict the test data
-        #test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
-        #test_predictions.add_predictions(model.test(utils.get_test_samples()))
-        #test_predictions.save()
+        test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
+        test_predictions.add_predictions(model.test(utils.get_test_samples()))
+        test_predictions.save()
 
     experiment_logger.save()
 

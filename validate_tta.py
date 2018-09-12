@@ -32,8 +32,8 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
     model.tta = tta
 
     # Validate
-    stats = model.validate(DataParallel(model.net), samples_val, -1)
+    stats = model.validate(DataParallel(model.net).cuda(), samples_val, -1)
     experiment_logger.set_split(i, stats)
-    break
 
 experiment_logger.print()
+#experiment_logger.save()

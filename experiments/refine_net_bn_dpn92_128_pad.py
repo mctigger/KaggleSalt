@@ -24,7 +24,7 @@ gpu = torch.device('cuda')
 
 
 class Model:
-    def __init__(self, name, split):
+    def __init__(self, name, split, threshold=0.5):
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
@@ -40,6 +40,7 @@ class Model:
         ]
 
         self.criterion = losses.LovaszBCEWithLogitsLoss()
+        self.threshold = threshold
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -50,8 +51,8 @@ class Model:
         self.net.load_state_dict(state_dict)
 
     def update_pbar(self, masks_predictions, masks_targets, pbar, average_meter, pbar_description):
-        average_meter.add('iou', iou(masks_predictions > 0.5, masks_targets.byte()))
-        average_meter.add('mAP', mAP(masks_predictions > 0.5, masks_targets.byte()))
+        average_meter.add('iou', iou(masks_predictions > self.threshold, masks_targets.byte()))
+        average_meter.add('mAP', mAP(masks_predictions > self.threshold, masks_targets.byte()))
 
         pbar.set_description(
             pbar_description + ''.join(
