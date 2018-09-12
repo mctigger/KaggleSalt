@@ -3,16 +3,15 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet
-from nets.backbones import ResNetBase
+from nets.refinenet_hypercolumn import RefineNet
+from nets.encoders.dpn import dpn92
+from nets.backbones import DPNBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -29,15 +28,18 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(ResNetBase(
-            resnet.resnet50(pretrained=True)),
-            num_features=128
+        self.net = RefineNet(
+            DPNBase(dpn92()),
+            num_features=128,
+            block_multiplier=1,
+            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640]
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
+        self.criterion = losses.LovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -87,7 +89,7 @@ class Model:
 
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (2.5e-4, 1e-6),
+            0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
             160: (1e-5, 1e-6),
         })
@@ -122,9 +124,6 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
-        criterion = losses.LovaszBCEWithLogitsLoss(alpha, 2 - alpha)
-
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -153,7 +152,7 @@ class Model:
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = net(images)
 
-                loss = criterion(masks_predictions, masks_targets)
+                loss = self.criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -176,7 +175,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -211,7 +210,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

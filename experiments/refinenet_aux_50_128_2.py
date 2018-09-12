@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet
+from nets.refinenet_aux import RefineNet
 from nets.backbones import ResNetBase
 from metrics import iou, mAP
 import datasets
@@ -38,6 +38,7 @@ class Model:
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
+        self.criterion = losses.LovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -73,7 +74,7 @@ class Model:
     def predict(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions = net(tta.transform_forward(images))[0]
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
@@ -87,7 +88,7 @@ class Model:
 
         optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (2.5e-4, 1e-6),
+            0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
             160: (1e-5, 1e-6),
         })
@@ -122,9 +123,6 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
-        criterion = losses.LovaszBCEWithLogitsLoss(alpha, 2 - alpha)
-
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -151,9 +149,17 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = net(images)
+                masks_predictions, aux_0, aux_1, aux_2, aux_3 = net(images)
 
-                loss = criterion(masks_predictions, masks_targets)
+                loss = self.criterion(masks_predictions, masks_targets)\
+                    + self.criterion(aux_0, F.avg_pool2d(masks_targets, kernel_size=4, stride=4))\
+                    + self.criterion(aux_1, F.avg_pool2d(masks_targets, kernel_size=8, stride=8))\
+                    + self.criterion(aux_2, F.avg_pool2d(masks_targets, kernel_size=16, stride=16))\
+                    + self.criterion(aux_3, F.avg_pool2d(masks_targets, kernel_size=32, stride=32))
+
+                loss = loss / 4
+
+
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()

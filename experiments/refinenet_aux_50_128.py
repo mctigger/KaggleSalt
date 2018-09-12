@@ -152,10 +152,10 @@ class Model:
                 masks_predictions, aux_0, aux_1, aux_2, aux_3 = net(images)
 
                 loss = self.criterion(masks_predictions, masks_targets)\
-                    + self.criterion(aux_0, masks_targets)\
-                    + self.criterion(aux_1, masks_targets)\
-                    + self.criterion(aux_2, masks_targets)\
-                    + self.criterion(aux_3, masks_targets)
+                    + self.criterion(F.upsample(aux_0, scale_factor=4, mode='bilinear'), masks_targets)\
+                    + self.criterion(F.upsample(aux_1, scale_factor=8, mode='bilinear'), masks_targets)\
+                    + self.criterion(F.upsample(aux_2, scale_factor=16, mode='bilinear'), masks_targets)\
+                    + self.criterion(F.upsample(aux_3, scale_factor=32, mode='bilinear'), masks_targets)
 
                 loss = loss / 4
 
