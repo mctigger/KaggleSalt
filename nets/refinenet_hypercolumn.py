@@ -295,13 +295,124 @@ class RefineNet(nn.Module):
         r_3 = self.refine_3([x_0, r_2])
 
         x = self.classifier(torch.cat([
-        	F.upsample(r_0, scale_factor=8, mode='bilinear'),
-        	F.upsample(r_1, scale_factor=4, mode='bilinear'), 
-        	F.upsample(r_2, scale_factor=2, mode='bilinear'), 
-        	r_3
-    	], dim=1))
+            F.interpolate(r_0, scale_factor=8, mode='bilinear'),
+            F.interpolate(r_1, scale_factor=4, mode='bilinear'),
+            F.interpolate(r_2, scale_factor=2, mode='bilinear'),
+            r_3
+        ], dim=1))
 
         return x
+
+
+class HypercolumnRefineNet(nn.Module):
+    def __init__(
+            self,
+            encoder,
+            num_features=None,
+            num_features_base=None,
+            block_multiplier=4,
+            crp=CRP,
+            rcu=RCU,
+            classifier=RefineNetUpsampleClassifier,
+            dropout=0
+    ):
+        super(HypercolumnRefineNet, self).__init__()
+
+        if num_features is None:
+            num_features = [256*2, 256, 256, 256]
+
+        if not isinstance(num_features, list):
+            num_features = [num_features*2, num_features, num_features, num_features]
+
+        if num_features_base is None:
+            num_features_base = [64, 128, 256, 512]
+
+        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+
+        self.bottleneck_0 = nn.Conv2d(num_features[0], num_features[3] // 4, kernel_size=1, bias=False)
+        self.bottleneck_1 = nn.Conv2d(num_features[1], num_features[3] // 4, kernel_size=1, bias=False)
+        self.bottleneck_2 = nn.Conv2d(num_features[2], num_features[3] // 4, kernel_size=1, bias=False)
+        self.bottleneck_3 = nn.Conv2d(num_features[3], num_features[3] // 4, kernel_size=1, bias=False)
+
+        self.classifier = classifier(num_features[3]*rcu.multiplier)
+
+        self.encoder = encoder
+
+    def forward(self, x):
+        x_0, x_1, x_2, x_3 = self.encoder(x)
+
+        r_0 = self.refine_0([x_3])
+        r_1 = self.refine_1([x_2, r_0])
+        r_2 = self.refine_2([x_1, r_1])
+        r_3 = self.refine_3([x_0, r_2])
+
+        x = self.classifier(torch.cat([
+            F.interpolate(self.bottleneck_0(r_0), scale_factor=8, mode='bilinear'),
+            F.interpolate(self.bottleneck_1(r_1), scale_factor=4, mode='bilinear'),
+            F.interpolate(self.bottleneck_2(r_2), scale_factor=2, mode='bilinear'),
+            self.bottleneck_3(r_3)
+        ], dim=1))
+
+        return x
+
+
+class ExtremeHypercolumnRefineNet(nn.Module):
+    def __init__(
+            self,
+            encoder,
+            num_features=None,
+            num_features_base=None,
+            block_multiplier=4,
+            crp=CRP,
+            rcu=RCU,
+            classifier=RefineNetUpsampleClassifier,
+            dropout=0
+    ):
+        super(ExtremeHypercolumnRefineNet, self).__init__()
+
+        if num_features is None:
+            num_features = [256*2, 256, 256, 256]
+
+        if not isinstance(num_features, list):
+            num_features = [num_features*2, num_features, num_features, num_features]
+
+        if num_features_base is None:
+            num_features_base = [64, 128, 256, 512]
+
+        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+
+        self.bottleneck_0 = RefineNetUpsampleClassifier(num_features[0], scale_factor=32)
+        self.bottleneck_1 = RefineNetUpsampleClassifier(num_features[1], scale_factor=16)
+        self.bottleneck_2 = RefineNetUpsampleClassifier(num_features[2], scale_factor=8)
+        self.bottleneck_3 = RefineNetUpsampleClassifier(num_features[3], scale_factor=4)
+
+        self.classifier = classifier(4)
+
+        self.encoder = encoder
+
+    def forward(self, x):
+        x_0, x_1, x_2, x_3 = self.encoder(x)
+
+        r_0 = self.refine_0([x_3])
+        r_1 = self.refine_1([x_2, r_0])
+        r_2 = self.refine_2([x_1, r_1])
+        r_3 = self.refine_3([x_0, r_2])
+
+        x = self.classifier(torch.cat([
+            self.bottleneck_0(r_0),
+            self.bottleneck_1(r_1),
+            self.bottleneck_2(r_2),
+            self.bottleneck_3(r_3)
+        ], dim=1))
+
+        return x
+
 
 
 class DilatedPyramidPooling(nn.Module):

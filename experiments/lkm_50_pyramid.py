@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.lkm import LargeKernelMattersNet, NoUpsampleClassifier
-from nets.backbones import NoPoolResNetBase
+from nets.lkm import LargeKernelMattersNet, PyramidGCN
+from nets.backbones import ResNetBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -29,14 +29,14 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = LargeKernelMattersNet(
-            NoPoolResNetBase(resnet.resnet50(pretrained=True)),
-            classifier=NoUpsampleClassifier(128, 32)
+            ResNetBase(resnet.resnet50(pretrained=True)),
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
+        self.criterion = losses.LovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -121,9 +121,6 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
-        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
-
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -152,7 +149,7 @@ class Model:
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = net(images)
 
-                loss = criterion(masks_predictions, masks_targets)
+                loss = self.criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()

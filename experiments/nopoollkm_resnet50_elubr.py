@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.lkm import LargeKernelMattersNet, NoUpsampleClassifier
+from nets.lkm import LargeKernelMattersNet, NoUpsampleClassifier, ELUBR
 from nets.backbones import NoPoolResNetBase
 from metrics import iou, mAP
 import datasets
@@ -30,7 +30,8 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = LargeKernelMattersNet(
             NoPoolResNetBase(resnet.resnet50(pretrained=True)),
-            classifier=NoUpsampleClassifier(128, 32)
+            classifier=NoUpsampleClassifier(128, 32),
+            br=ELUBR
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
