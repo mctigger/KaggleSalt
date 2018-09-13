@@ -3,6 +3,7 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
+from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
@@ -10,7 +11,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.lkm import LargeKernelMattersNet, NoUpsampleClassifier
+from nets.lkm import LargeKernelMattersNet, NoUpsampleClassifier, PyramidConcatGCN
 from nets.backbones import NoPoolResNetBase
 from metrics import iou, mAP
 import datasets
@@ -30,7 +31,8 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = LargeKernelMattersNet(
             NoPoolResNetBase(resnet.resnet50(pretrained=True)),
-            classifier=NoUpsampleClassifier(128, 32)
+            classifier=NoUpsampleClassifier(128, 32),
+            gcn=PyramidConcatGCN
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -175,7 +177,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -210,7 +212,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

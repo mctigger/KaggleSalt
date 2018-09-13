@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 from torch.nn import functional as F
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
@@ -14,9 +15,9 @@ class SCSEBlock(nn.Module):
         super(SCSEBlock, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
-        self.channel_excitation = nn.Sequential(nn.Linear(channel, int(channel//reduction)),
+        self.channel_excitation = nn.Sequential(nn.Linear(channel, int(channel // reduction)),
                                                 nn.ReLU(inplace=True),
-                                                nn.Linear(int(channel//reduction), channel),
+                                                nn.Linear(int(channel // reduction), channel),
                                                 nn.Sigmoid())
 
         self.spatial_se = nn.Sequential(nn.Conv2d(channel, 1, kernel_size=1,
@@ -118,7 +119,7 @@ class SCSERCU(nn.Module):
         super(SCSERCU, self).__init__()
         self.conv1 = conv3x3(in_channels, out_channels, stride)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.elu = nn.ELU(inplace=True)
+        self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(out_channels, out_channels)
         self.bn2 = nn.BatchNorm2d(out_channels)
         self.downsample = downsample
@@ -128,18 +129,18 @@ class SCSERCU(nn.Module):
     def forward(self, x):
         residual = x
 
-        out = self.bn1(x)
-        out = self.elu(out)
-        out = self.conv1(out)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
 
-        out = self.bn2(out)
-        out = self.elu(out)
         out = self.conv2(out)
+        out = self.bn2(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out = self.scse_module(out) + residual
+        out = self.relu(out)
 
         return out
 
@@ -180,7 +181,7 @@ class SENextBottleneckRCU(nn.Module):
 class MrF(nn.Module):
     def __init__(self, channels, scale_factors):
         super(MrF, self).__init__()
-        
+
         paths = []
         for s in scale_factors:
             paths.append(nn.Sequential(
@@ -231,18 +232,18 @@ class RefineNetBlock(nn.Module):
         paths = []
         for in_channels, scale_factor in config:
             p = nn.Sequential(*[
-                nn.Conv2d(in_channels, channels*rcu.multiplier, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.Conv2d(in_channels, channels * rcu.multiplier, kernel_size=1, stride=1, padding=0, bias=False),
                 nn.Dropout2d(dropout),
-                rcu(channels*rcu.multiplier, channels),
-                rcu(channels*rcu.multiplier, channels)
+                rcu(channels * rcu.multiplier, channels),
+                rcu(channels * rcu.multiplier, channels)
             ])
             paths.append(p)
 
         self.paths = nn.ModuleList(paths)
 
-        self.mrf = MrF(channels*rcu.multiplier, [scale_factor for in_channels, scale_factor in config])
-        self.crp = crp(channels*rcu.multiplier)
-        self.out = rcu(channels*rcu.multiplier, channels)
+        self.mrf = MrF(channels * rcu.multiplier, [scale_factor for in_channels, scale_factor in config])
+        self.crp = crp(channels * rcu.multiplier)
+        self.out = rcu(channels * rcu.multiplier, channels)
 
     def forward(self, inputs):
         paths = [path(inp) for inp, path in zip(inputs, self.paths)]
@@ -268,44 +269,43 @@ class RefineNet(nn.Module):
         super(RefineNet, self).__init__()
 
         if num_features is None:
-            num_features = [256*2, 256, 256, 256]
+            num_features = [256 * 2, 256, 256, 256]
 
         if not isinstance(num_features, list):
-            num_features = [num_features*2, num_features, num_features, num_features]
+            num_features = [num_features * 2, num_features, num_features, num_features]
 
         if num_features_base is None:
             num_features_base = [64, 128, 256, 512]
 
-        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier * num_features_base[3], 1)], crp=crp,
+                                       rcu=rcu, dropout=dropout)
+        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier * num_features_base[2], 1),
+                                                         (num_features[0] * rcu.multiplier, 2)], crp=crp, rcu=rcu,
+                                       dropout=dropout)
+        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier * num_features_base[1], 1),
+                                                         (num_features[1] * rcu.multiplier, 2)], crp=crp, rcu=rcu,
+                                       dropout=dropout)
+        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier * num_features_base[0], 1),
+                                                         (num_features[2] * rcu.multiplier, 2)], crp=crp, rcu=rcu,
+                                       dropout=dropout)
 
-        self.classifier = classifier(num_features[3]*rcu.multiplier)
+        self.classifier_aux = classifier(num_features[0] * rcu.multiplier)
+        self.classifier = classifier(num_features[3] * rcu.multiplier)
 
         self.encoder = encoder
-
-        self.aux_3 = RefineNetUpsampleClassifier(num_features[0], scale_factor=1)
-        self.aux_2 = RefineNetUpsampleClassifier(num_features[1], scale_factor=1)
-        self.aux_1 = RefineNetUpsampleClassifier(num_features[2], scale_factor=1)
-        self.aux_0 = RefineNetUpsampleClassifier(num_features[3], scale_factor=1)
 
     def forward(self, x):
         x_0, x_1, x_2, x_3 = self.encoder(x)
 
-        x_3 = self.refine_0([x_3])
-        x_2 = self.refine_1([x_2, x_3])
-        x_1 = self.refine_2([x_1, x_2])
-        x_0 = self.refine_3([x_0, x_1])
+        r_0 = self.refine_0([x_3])
+        r_1 = self.refine_1([x_2, r_0])
+        r_2 = self.refine_2([x_1, r_1])
+        r_3 = self.refine_3([x_0, r_2])
 
-        x = self.classifier(x_0)
+        aux = self.classifier_aux(r_0)
+        x = self.classifier(r_3)
 
-        aux_0 = self.aux_0(x_0)
-        aux_1 = self.aux_1(x_1)
-        aux_2 = self.aux_2(x_2)
-        aux_3 = self.aux_3(x_3)
-
-        return x, aux_0, aux_1, aux_2, aux_3
+        return x, aux
 
 
 class DilatedPyramidPooling(nn.Module):
