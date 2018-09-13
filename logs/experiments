@@ -1,7 +1,9 @@
 experiment train_iou train_loss train_mAP val_iou val_mAP
+nopoolrefinenet_dpn92 0.9401 0.4692 0.9258 0.8841 0.8624
 refine_net_bn_50_128_pad_semisupervised_subset 0.9258 0.2101 0.9059 0.8847 0.8621
 refine_net_bn_50_128_pad_semisupervised_subset_2 0.9225 0.2132 0.9020 0.8839 0.8598
 refine_net_bn_50_128_pad_semisupervised 0.9422 0.1496 0.9240 0.8825 0.8584
+nopoollkm_dpn92 0.9502 0.3985 0.9388 0.8802 0.8576
 refine_net_bn_50_128_pad_semisupervised_no_momentum 0.9402 0.1518 0.9227 0.8816 0.8574
 nopoolrefinenet_50_128_lovasz_elu_focal_finetune 0.9202 0.6712 0.8980 0.8732 0.8516
 nopoollkm_50_lovasz_elu_focal_finetune 0.9375 0.5271 0.9198 0.8754 0.8514

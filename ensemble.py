@@ -15,12 +15,10 @@ def ensemble_mean_mean(p):
     return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
 experiments = [
-    'nopoollkm_50_lovasz_elu_focal_finetune',
-    'nopoolrefinenet_50_128_lovasz_elu_focal_finetune',
-    'refine_net_bn_50_128_pad_semisupervised_subset'
+    'nopoollkm_dpn92'
 ]
 
-ensemble_name = 'ensemble_mean_mean'
+ensemble_name = 'nopoollkm_dpn92'
 
 test_predictions_experiment = []
 
