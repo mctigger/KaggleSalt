@@ -116,6 +116,7 @@ def dpn68b(num_classes=1000, pretrained='imagenet+5k'):
         small=True, num_init_features=10, k_r=128, groups=32,
         b=True, k_sec=(3, 4, 12, 3), inc_sec=(16, 32, 32, 64),
         num_classes=num_classes, test_time_pool=True)
+
     if pretrained:
         settings = pretrained_settings['dpn68b'][pretrained]
         assert num_classes == settings['num_classes'], \

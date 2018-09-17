@@ -158,7 +158,6 @@ class Model:
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
 
         weights = [len(pseudo_dataset) / len(dataset)]*len(dataset) + [1]*len(pseudo_dataset)
-        print(len(weights))
         dataloader = DataLoader(
             ConcatDataset([dataset, pseudo_dataset]),
             num_workers=10,

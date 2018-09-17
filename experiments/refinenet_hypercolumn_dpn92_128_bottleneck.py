@@ -11,7 +11,7 @@ from ela import transformations, generator, random
 
 from nets.refinenet_hypercolumn import HypercolumnRefineNet
 from nets.encoders.dpn import dpn92
-from nets.backbones import DPNBase
+from nets.backbones import DPN92Base
 from metrics import iou, mAP
 import datasets
 import utils
@@ -29,7 +29,7 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = HypercolumnRefineNet(
-            DPNBase(dpn92()),
+            DPN92Base(dpn92()),
             num_features=128,
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640]

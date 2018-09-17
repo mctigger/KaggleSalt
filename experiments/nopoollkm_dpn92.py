@@ -12,7 +12,7 @@ from tqdm import tqdm
 from ela import transformations, generator, random
 
 from nets.lkm import LargeKernelMattersNet, NoUpsampleClassifier
-from nets.backbones import NoPoolDPNBase
+from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
 import datasets
@@ -31,15 +31,14 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = LargeKernelMattersNet(
-            NoPoolDPNBase(dpn92()),
+            NoPoolDPN92Base(dpn92()),
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=NoUpsampleClassifier(128, 32)
+            classifier=NoUpsampleClassifier(128, 128)
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
-
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)

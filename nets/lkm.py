@@ -6,14 +6,41 @@ from .modules import SCSEBlock
 from .refinenet import RCU
 
 
-class BR(nn.Module):
-    def __init__(self, channels):
-        super(BR, self).__init__()
+class SCSEBR(nn.Module):
+    def __init__(self, channels, activation=nn.ReLU):
+        super(SCSEBR, self).__init__()
 
-        self.block = SCSEBlock(channels, channels)
+        self.block = SCSEBlock(channels, channels, activation=activation)
 
     def forward(self, x):
         return self.block(x)
+
+
+class BR(nn.Module):
+    expansion = 1
+
+    def __init__(self, channels):
+        super(BR, self).__init__()
+        self.conv1 = conv3x3(channels, channels)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3(channels, channels)
+        self.bn2 = nn.BatchNorm2d(channels)
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        out += residual
+        out = self.relu(out)
+
+        return out
 
 
 class ELUBR(nn.Module):
@@ -66,19 +93,21 @@ class PyramidConcatGCN(nn.Module):
         super(PyramidConcatGCN, self).__init__()
 
         channels = channels // 4
-
-        self.gcn_1 = nn.Conv2d(in_channels, channels, kernel_size=1, bias=False)
-        self.gcn_3 = nn.Sequential(nn.Conv2d(in_channels, channels, 1, bias=False), GCN(channels, channels, kernel_size=3))
-        self.gcn_5 = nn.Sequential(nn.Conv2d(in_channels, channels, 1, bias=False), GCN(channels, channels, kernel_size=5))
-        self.gcn_7 = nn.Sequential(nn.Conv2d(in_channels, channels, 1, bias=False), GCN(channels, channels, kernel_size=7))
+        self.bottleneck = nn.Conv2d(in_channels, channels, 1, bias=False)
+        self.gcn_3 = GCN(channels, channels, kernel_size=3)
+        self.gcn_5 = GCN(channels, channels, kernel_size=5)
+        self.gcn_7 = GCN(channels, channels, kernel_size=7)
+        self.gcn_11 = GCN(channels, channels, kernel_size=11)
 
     def forward(self, x):
-        x_1 = self.gcn_1(x)
+        x = self.bottleneck(x)
+
         x_3 = self.gcn_3(x)
         x_5 = self.gcn_5(x)
         x_7 = self.gcn_7(x)
+        x_11 = self.gcn_11(x)
 
-        return torch.cat([x_1, x_3, x_5, x_7], dim=1)
+        return torch.cat([x_3, x_5, x_7, x_11], dim=1)
 
 
 class GCN(nn.Module):
@@ -116,7 +145,7 @@ class NoUpsampleClassifier(nn.Module):
 
 
 class LargeKernelMattersNet(nn.Module):
-    def __init__(self, base, num_features_base=None, classifier=None, gcn=GCN, br=BR, k=128):
+    def __init__(self, base, num_features_base=None, classifier=None, gcn=GCN, br=SCSEBR, k=128):
         super(LargeKernelMattersNet, self).__init__()
 
         if num_features_base is None:

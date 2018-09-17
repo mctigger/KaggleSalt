@@ -2,16 +2,16 @@ import os
 import pathlib
 
 import torch
-from torch.nn import DataParallel
+from torch.nn import DataParallel, ELU
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, SCSERCU
+from nets.lkm import LargeKernelMattersNet, NoUpsampleClassifier, PyramidConcatGCN, SCSEBR
+from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
-from nets.backbones import DPN92Base
 from metrics import iou, mAP
 import datasets
 import utils
@@ -28,19 +28,18 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            DPN92Base(dpn92()),
-            num_features=128,
-            block_multiplier=1,
+        self.net = LargeKernelMattersNet(
+            NoPoolDPN92Base(dpn92()),
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            rcu=SCSERCU
+            classifier=NoUpsampleClassifier(128, 129),
+            gcn=PyramidConcatGCN,
+            br=lambda channels: SCSEBR(channels, activation=ELU)
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
-        self.criterion = losses.ELULovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -66,10 +65,10 @@ class Model:
         tta_masks = []
         for tta in self.tta:
             masks_predictions = net(tta.transform_forward(images))
-            masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
+            masks_predictions = tta.transform_backward(masks_predictions)
             tta_masks.append(masks_predictions)
 
-        tta_masks = torch.stack(tta_masks, dim=0)
+        tta_masks = torch.stack(tta_masks, dim=1)
 
         return tta_masks
 
@@ -125,6 +124,9 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
+        alpha = 2 * max(0, ((100 - e) / 100))
+        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
+
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -140,7 +142,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=32,
+            batch_size=16,
             shuffle=True
         )
 
@@ -153,7 +155,7 @@ class Model:
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = net(images)
 
-                loss = self.criterion(masks_predictions, masks_targets)
+                loss = criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -176,7 +178,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -203,7 +205,7 @@ class Model:
         if predict is None:
             predict = self.predict
 
-        net = DataParallel(self.net)
+        net = DataParallel(self.net).cuda()
 
         transforms = generator.TransformationsGenerator([])
 
@@ -211,14 +213,13 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, ids in test_dataloader:
-                images = images.to(gpu)
                 masks_predictions = predict(net, images)
 
                 pbar.set_description('Creating test predictions...')

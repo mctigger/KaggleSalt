@@ -2,37 +2,11 @@ from torch import nn
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
+from nets.modules import SCSEBlock
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
     return nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=bias)
-
-
-class SCSEBlock(nn.Module):
-    def __init__(self, channel, reduction=16):
-        super(SCSEBlock, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-
-        self.channel_excitation = nn.Sequential(nn.Linear(channel, int(channel//reduction)),
-                                                nn.ReLU(inplace=True),
-                                                nn.Linear(int(channel//reduction), channel),
-                                                nn.Sigmoid())
-
-        self.spatial_se = nn.Sequential(nn.Conv2d(channel, 1, kernel_size=1,
-                                                  stride=1, padding=0, bias=False),
-                                        nn.Sigmoid())
-
-    def forward(self, x):
-        bahs, chs, _, _ = x.size()
-
-        # Returns a new tensor with the same data as the self tensor but of a different size.
-        chn_se = self.avg_pool(x).view(bahs, chs)
-        chn_se = self.channel_excitation(chn_se).view(bahs, chs, 1, 1)
-        chn_se = x * chn_se
-
-        spa_se = self.spatial_se(x)
-        spa_se = x * spa_se
-        return chn_se + spa_se
 
 
 class RefineNetUpsampleClassifier(nn.Module):
@@ -43,23 +17,6 @@ class RefineNetUpsampleClassifier(nn.Module):
             RCU(num_features, num_features),
             nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
             nn.Upsample(scale_factor=scale_factor, mode='bilinear')
-        ])
-
-    def forward(self, x):
-        return self.classifier(x)
-
-
-class RefineNetDetailedClassifier(nn.Module):
-    def __init__(self, num_features):
-        super(RefineNetDetailedClassifier, self).__init__()
-        self.classifier = nn.Sequential(*[
-            RCU(num_features, num_features // 2),
-            RCU(num_features // 2, num_features // 2),
-            nn.Upsample(scale_factor=2, mode='bilinear'),
-            RCU(num_features // 2, num_features // 4),
-            RCU(num_features // 4, num_features // 4),
-            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
-            nn.Upsample(scale_factor=2, mode='bilinear')
         ])
 
     def forward(self, x):
@@ -113,34 +70,23 @@ class SERCU(nn.Module):
 class SCSERCU(nn.Module):
     multiplier = 1
 
-    def __init__(self, in_channels, out_channels, stride=1, downsample=None, reduction=16):
+    def __init__(self, *args, **kwargs):
         super(SCSERCU, self).__init__()
-        self.conv1 = conv3x3(in_channels, out_channels, stride)
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.elu = nn.ELU(inplace=True)
-        self.conv2 = conv3x3(out_channels, out_channels)
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.downsample = downsample
-        self.stride = stride
-        self.scse_module = SCSEBlock(out_channels * self.multiplier, reduction=reduction)
+        self.scse_block = SCSEBlock(*args, **kwargs)
 
     def forward(self, x):
-        residual = x
+        return self.scse_block(x)
 
-        out = self.bn1(x)
-        out = self.elu(out)
-        out = self.conv1(out)
 
-        out = self.bn2(out)
-        out = self.elu(out)
-        out = self.conv2(out)
+class ELUSCSERCU(nn.Module):
+    multiplier = 1
 
-        if self.downsample is not None:
-            residual = self.downsample(x)
+    def __init__(self, *args, **kwargs):
+        super(ELUSCSERCU, self).__init__()
+        self.scse_block = SCSEBlock(*args, activation=nn.ELU, **kwargs)
 
-        out = self.scse_module(out) + residual
-
-        return out
+    def forward(self, x):
+        return self.scse_block(x)
 
 
 class BottleneckRCU(nn.Module):

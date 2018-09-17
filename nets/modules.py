@@ -3,12 +3,12 @@ from torchvision.models.resnet import conv3x3
 
 
 class SCSEModule(nn.Module):
-    def __init__(self, channel, reduction=16):
+    def __init__(self, channel, reduction=16, activation=nn.ReLU):
         super(SCSEModule, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
         self.channel_excitation = nn.Sequential(nn.Linear(channel, int(channel//reduction)),
-                                                nn.ReLU(inplace=True),
+                                                activation(inplace=True),
                                                 nn.Linear(int(channel//reduction), channel),
                                                 nn.Sigmoid())
 
@@ -32,16 +32,16 @@ class SCSEModule(nn.Module):
 class SCSEBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, reduction=16):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, reduction=16, activation=nn.ReLU):
         super(SCSEBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = activation(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
-        self.scse_module = SCSEModule(planes, reduction=reduction)
+        self.scse_module = SCSEModule(planes, reduction=reduction, activation=activation)
 
     def forward(self, x):
         residual = x

@@ -2,16 +2,16 @@ import os
 import pathlib
 
 import torch
-from torch.nn import DataParallel
+from torch.nn import DataParallel, functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
+from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, SCSERCU
-from nets.encoders.dpn import dpn92
-from nets.backbones import DPN92Base
+from nets.refinenet_aux import RefineNet, RefineNetUpsampleClassifier
+from nets.backbones import NoPoolResNetBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -28,19 +28,16 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            DPN92Base(dpn92()),
+        self.net = RefineNet(NoPoolResNetBase(
+            resnet.resnet50(pretrained=True)),
             num_features=128,
-            block_multiplier=1,
-            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            rcu=SCSERCU
+            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
-        self.criterion = losses.ELULovaszBCEWithLogitsLoss()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -65,18 +62,18 @@ class Model:
     def predict_raw(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
-            masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
+            masks_predictions, _ = net(tta.transform_forward(images))
+            masks_predictions = tta.transform_backward(masks_predictions)
             tta_masks.append(masks_predictions)
 
-        tta_masks = torch.stack(tta_masks, dim=0)
+        tta_masks = torch.stack(tta_masks, dim=1)
 
         return tta_masks
 
     def predict(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions, _ = net(tta.transform_forward(images))
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
@@ -125,6 +122,9 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
+        alpha = 2 * max(0, ((100 - e) / 100))
+        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
+
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
@@ -151,9 +151,9 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = net(images)
+                masks_predictions, aux_predictions = net(images)
 
-                loss = self.criterion(masks_predictions, masks_targets)
+                loss = criterion(masks_predictions, masks_targets) + 0.4 * criterion(aux_predictions, F.max_pool2d(masks_targets, 8))
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -203,7 +203,7 @@ class Model:
         if predict is None:
             predict = self.predict
 
-        net = DataParallel(self.net)
+        net = DataParallel(self.net).cuda()
 
         transforms = generator.TransformationsGenerator([])
 
@@ -218,7 +218,6 @@ class Model:
             net.eval()
 
             for images, ids in test_dataloader:
-                images = images.to(gpu)
                 masks_predictions = predict(net, images)
 
                 pbar.set_description('Creating test predictions...')

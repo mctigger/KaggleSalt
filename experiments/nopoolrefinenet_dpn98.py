@@ -5,13 +5,13 @@ import torch
 from torch.nn import DataParallel
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
 from nets.refinenet import RefineNet, RefineNetUpsampleClassifier
-from nets.backbones import NoPoolResNetBase
+from nets.backbones import NoPoolDPN98Base
+from nets.encoders.dpn import dpn98
 from metrics import iou, mAP
 import datasets
 import utils
@@ -28,20 +28,41 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(NoPoolResNetBase(
-            resnet.resnet50(pretrained=True)),
+        self.net = RefineNet(
+            NoPoolDPN98Base(dpn98()),
             num_features=128,
+            block_multiplier=1,
+            num_features_base=[336, 768, 1728, 2688],
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
         )
-
+        self.optimizer = Adam(self.net.parameters(), lr=1e-4, weight_decay=1e-4)
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
+        self.batch_size = 16
+
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
         torch.save(self.net.state_dict(), os.path.join(self.path, 'model'))
+
+    def save_checkpoint(self, net, optimizer, epoch, logger, best_val_mAP):
+        pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
+        torch.save({
+            'net': net.state_dict(),
+            'optimizer': optimizer.state_dict(),
+            'epoch': epoch,
+            'logger': logger,
+            'best_val_mAP': best_val_mAP
+        }, os.path.join(self.path, 'checkpoint'))
+
+    def load_checkpoint(self, net, optimizer):
+        checkpoint = torch.load(os.path.join(self.path, 'checkpoint'))
+        net.load_state_dict(checkpoint['net'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+
+        return checkpoint['epoch'], checkpoint['logger']['epoch'], checkpoint['best_val_mAP']
 
     def load(self):
         state_dict = torch.load(os.path.join(self.path, 'model'))
@@ -83,16 +104,7 @@ class Model:
         return masks_predictions
 
     def fit(self, samples_train, samples_val):
-        net = DataParallel(self.net)
-
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
-        })
-
-        epochs = 200
+        epoch_start, epoch_end = 0, 200
 
         best_val_mAP = 0
         best_stats = None
@@ -100,8 +112,22 @@ class Model:
         # Logs stats for each epoch and saves them as .csv at the end
         epoch_logger = utils.EpochLogger(self.name + '-split_{}'.format(self.split))
 
+        net = DataParallel(self.net).cuda()
+        optimizer = self.optimizer
+        lr_scheduler = utils.CyclicLR(optimizer, 5, {
+            0: (1e-4, 1e-6),
+            100: (0.5e-4, 1e-6),
+            160: (1e-5, 1e-6),
+        })
+
+        if os.path.exists(os.path.join(self.path, 'checkpoint')):
+            epoch_start, epoch_logger, best_val_mAP = self.load_checkpoint(net, optimizer)
+            print('Loading from checkpoint. Continuing from epoch {}...'.format(epoch_start))
+
+            print(epoch_logger)
+
         # Training
-        for e in range(epochs):
+        for e in range(epoch_start, epoch_end):
             lr_scheduler.step(e)
 
             stats_train = self.train(net, samples_train, optimizer, e)
@@ -116,13 +142,16 @@ class Model:
                 best_stats = stats
                 self.save()
 
+            self.save_checkpoint(net, optimizer, e, {'epoch': epoch_logger}, best_val_mAP)
+
         # Post training
         epoch_logger.save()
 
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        criterion = losses.LovaszBCEWithLogitsLoss()
+        alpha = 2 * max(0, ((100 - e) / 100))
+        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
@@ -139,7 +168,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=32,
+            batch_size=self.batch_size,
             shuffle=True
         )
 
@@ -175,7 +204,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=self.batch_size * 2
         )
 
         average_meter_val = meters.AverageMeter()
@@ -210,7 +239,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=self.batch_size * 2
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

@@ -48,14 +48,15 @@ class Flip(TTA):
 
 
 class Resize(TTA):
-    def __init__(self, size):
+    def __init__(self, size, original_size=101):
         self.size = size
+        self.original_size = original_size
 
     def transform_forward(self, x):
-        return F.interpolate(x, size=self.size)
+        return F.interpolate(x, size=self.size, mode='bilinear')
 
     def transform_backward(self, x):
-        return F.interpolate(x, size=self.size)
+        return F.interpolate(x, size=self.original_size, mode='bilinear')
 
 
 class Pad(TTA):

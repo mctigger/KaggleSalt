@@ -15,7 +15,13 @@ name = args.name
 
 tta = [
     tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
-    tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
+    tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()]),
+    tta.Pipeline([tta.Resize(128)]),
+    tta.Pipeline([tta.Resize(128), tta.Flip()]),
+    tta.Pipeline([tta.Resize(128), tta.Pad((16, 16, 16, 16))]),
+    tta.Pipeline([tta.Resize(128), tta.Pad((16, 16, 16, 16)), tta.Flip()]),
+    tta.Pipeline([tta.Resize(160)]),
+    tta.Pipeline([tta.Resize(160), tta.Flip()]),
 ]
 
 test_predictions = utils.TestPredictions(name, mode='val')
@@ -31,7 +37,7 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
     model.tta = tta
 
     # Predict the test data
-    test_predictions.add_predictions(model.test(samples_val, dir_test='./data/train', predict=model.predict))
+    test_predictions.add_predictions(model.test(samples_val, dir_test='./data/train', predict=model.predict_raw))
 
 
 test_predictions.save()

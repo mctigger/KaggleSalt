@@ -2,6 +2,7 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.models.resnet import BasicBlock, Bottleneck, ResNet, conv3x3
 
+from .modules import SCSEBlock
 
 def transposed_conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -80,12 +81,12 @@ class UResNetLayer(nn.Module):
     def __init__(self, inplanes, planes, num_layers):
         super(UResNetLayer, self).__init__()
         self.layers = nn.Sequential(*[
-            BasicBlock(inplanes, planes, downsample=nn.Sequential(
+            SCSEBlock(inplanes, planes, downsample=nn.Sequential(
                 nn.Conv2d(inplanes, planes, kernel_size=1, bias=False),
                 nn.BatchNorm2d(planes)
             )),
-            *[BasicBlock(planes, planes) for _ in range(num_layers - 2)],
-            TransposedBasicBlock(planes, planes, stride=2)
+            *[SCSEBlock(planes, planes) for _ in range(num_layers - 2)],
+            nn.Upsample(scale_factor=2, mode='bilinear')
         ])
 
     def forward(self, x):
@@ -93,7 +94,7 @@ class UResNetLayer(nn.Module):
 
 
 class UResNet(nn.Module):
-    def __init__(self, resnet, layers):
+    def __init__(self, resnet, layers, dropout=0):
         super(UResNet, self).__init__()
 
         self.resnet = resnet
@@ -103,7 +104,11 @@ class UResNet(nn.Module):
         self.de_3 = UResNetLayer(128, 64, layers[1])
         self.de_4 = UResNetLayer(64, 64, layers[0])
 
+        self.dropout = nn.Dropout2d(dropout)
+
         self.classifier = nn.Sequential(*[
+            BasicBlock(64, 64),
+            BasicBlock(64, 64),
             nn.Conv2d(64, 1, kernel_size=1, bias=True),
         ])
 
@@ -111,21 +116,20 @@ class UResNet(nn.Module):
         x = self.resnet.conv1(x)
         x = self.resnet.bn1(x)
         x = self.resnet.relu(x)
-        x = self.resnet.maxpool(x)
 
         x_1 = x = self.resnet.layer1(x)
         x_2 = x = self.resnet.layer2(x)
         x_3 = x = self.resnet.layer3(x)
         x = self.resnet.layer4(x)
 
-        x = self.de_1(x)
-        x = self.de_2(x + x_3)
-        x = self.de_3(x + x_2)
-        x = self.de_4(x + x_1)
+        x = self.de_1(self.dropout(x))
+        x = self.de_2(self.dropout(x + x_3))
+        x = self.de_3(self.dropout(x + x_2))
+        x = self.de_4(self.dropout(x + x_1))
 
         x = self.classifier(x)
 
-        return F.upsample(x, scale_factor=2, mode='bilinear')
+        return x
 
 
 class BottleneckUResNetLayer(nn.Module):

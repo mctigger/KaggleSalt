@@ -1,6 +1,4 @@
-import torch
 from torch import nn
-from torch.nn import functional as F
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
