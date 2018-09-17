@@ -1,8 +1,9 @@
+import torch
 from torch import nn
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
-from nets.modules import SCSEBlock
+from nets.modules import SCSEBlock, SelfAttentionBlock2D
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
@@ -168,6 +169,23 @@ class CRP(nn.Module):
         residual = residual + x
 
         return residual
+
+
+class OC(nn.Module):
+    def __init__(self, channels, scale=1):
+        super(OC, self).__init__()
+        self.psab = SelfAttentionBlock2D(channels, channels, channels // 2, channels, scale=scale)
+        self.conv_bn = nn.Sequential(
+            nn.Conv2d(2*channels, channels, kernel_size=1, stride=1, bias=False, padding=0),
+            nn.BatchNorm2d(channels)
+        )
+
+    def forward(self, residual):
+        x = self.psab(residual)
+        x = torch.cat([x, residual], dim=1)
+        x = self.conv_bn(x)
+
+        return x
 
 
 class RefineNetBlock(nn.Module):

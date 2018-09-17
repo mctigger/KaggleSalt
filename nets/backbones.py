@@ -1,4 +1,6 @@
-from torch import nn as nn, nn
+import torch
+from torch import nn
+from torch.nn import functional as F
 
 from nets.encoders.dpn import CatBnAct
 
@@ -170,6 +172,7 @@ class NoPoolDPN98Base(nn.Module):
 
         return x1, x2, x3, x4
 
+
 class ResNetBase(nn.Module):
     def __init__(self, resnet):
         super(ResNetBase, self).__init__()
@@ -215,6 +218,34 @@ class NoPoolResNetBase(nn.Module):
         x_2 = self.layer2(x_1)
         x_3 = self.layer3(x_2)
         x_4 = self.layer4(x_3)
+
+        return x_1, x_2, x_3, x_4
+
+
+class ConcatNoPoolResNetBase(nn.Module):
+    def __init__(self, resnet):
+        super(ConcatNoPoolResNetBase, self).__init__()
+        self.layer0 = nn.Sequential(
+            resnet.conv1,
+            resnet.bn1,
+            resnet.relu,
+        )
+
+        self.layer1 = resnet.layer1
+        self.layer2 = resnet.layer2
+        self.layer3 = resnet.layer3
+        self.layer4 = resnet.layer4
+
+    def forward(self, x):
+        x_0 = self.layer0(x)
+        x_1 = self.layer1(x_0)
+        x_2 = self.layer2(x_1)
+        x_3 = self.layer3(x_2)
+        x_4 = self.layer4(x_3)
+
+        x_2 = torch.cat([x_2, F.avg_pool2d(x_1, kernel_size=2)], dim=1)
+        x_3 = torch.cat([x_3, F.avg_pool2d(x_2, kernel_size=2)], dim=1)
+        x_4 = torch.cat([x_4, F.avg_pool2d(x_3, kernel_size=2)], dim=1)
 
         return x_1, x_2, x_3, x_4
 
