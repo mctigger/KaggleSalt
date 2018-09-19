@@ -15,10 +15,10 @@ def ensemble_mean_mean(p):
     return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
 experiments = [
-    'nopoollkm_resnet50_pyramid_concat',
+    'nopoolrefinenet_dpn92_oc',
 ]
 
-ensemble_name = 'nopoollkm_resnet50_pyramid_concat'
+ensemble_name = 'nopoolrefinenet_dpn92_oc'
 
 test_predictions_experiment = []
 
