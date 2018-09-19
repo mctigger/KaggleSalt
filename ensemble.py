@@ -11,14 +11,19 @@ def ensemble_mean(p, threshold=0.5):
 def ensemble_vote(p):
     return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
 
+
 def ensemble_mean_mean(p):
     return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
+
 experiments = [
-    'nopoollkm_resnet50_pyramid_concat',
+    'nopoolrefinenet_dpn98',
+    'nopoolrefinenet_dpn92',
+    'nopoollkm_dpn92_pyramid_concat',
+    'nopoollkm_dpn92'
 ]
 
-ensemble_name = 'nopoollkm_resnet50_pyramid_concat'
+ensemble_name = 'ensemble'
 
 test_predictions_experiment = []
 

@@ -1,7 +1,82 @@
 import torch
+from torch.autograd import Variable
 from torch import nn
 from torch.nn import functional as F
 from torchvision.models.resnet import conv3x3
+
+
+class PreActivationBasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
+        super(PreActivationBasicBlock, self).__init__()
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        residual = x
+
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.conv1(x)
+
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+
+        if self.downsample is not None:
+            residual = self.downsample(residual)
+
+        x = x + residual
+
+        return x
+
+
+class PreActivationBottleneckBlock(nn.Module):
+    expansion = 4
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
+        super(PreActivationBottleneckBlock, self).__init__()
+        self.bn1 = nn.BatchNorm2d(inplanes)
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+
+        self.bn3 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        residual = x
+
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.conv1(x)
+
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.conv2(x)
+
+        x = self.bn3(x)
+        x = self.relu(x)
+        x = self.conv3(x)
+
+        if self.downsample is not None:
+            residual = self.downsample(residual)
+
+        x = x + residual
+
+        return x
+
 
 
 class SCSEModule(nn.Module):
@@ -239,3 +314,137 @@ class SelfAttentionBlock2D(_SelfAttentionBlock):
                                                    value_channels,
                                                    out_channels,
                                                    scale)
+
+
+class BaseOC_Module(nn.Module):
+    """
+    Implementation of the BaseOC module
+    Parameters:
+        in_features / out_features: the channels of the input / output feature maps.
+        dropout: we choose 0.05 as the default value.
+        size: you can apply multiple sizes. Here we only use one size.
+    Return:
+        features fused with Object context information.
+    """
+
+    def __init__(self, in_channels, out_channels, key_channels, value_channels, dropout, sizes=([1])):
+        super(BaseOC_Module, self).__init__()
+        self.stages = []
+        self.stages = nn.ModuleList(
+            [self._make_stage(in_channels, out_channels, key_channels, value_channels, size) for size in sizes])
+        self.conv_bn_dropout = nn.Sequential(
+            nn.Conv2d(2 * in_channels, out_channels, kernel_size=1, padding=0),
+            InPlaceABNSync(out_channels),
+            nn.Dropout2d(dropout)
+        )
+
+    def _make_stage(self, in_channels, output_channels, key_channels, value_channels, size):
+        return SelfAttentionBlock2D(in_channels,
+                                    key_channels,
+                                    value_channels,
+                                    output_channels,
+                                    size)
+
+    def forward(self, feats):
+        priors = [stage(feats) for stage in self.stages]
+        context = priors[0]
+        for i in range(1, len(priors)):
+            context += priors[i]
+        output = self.conv_bn_dropout(torch.cat([context, feats], 1))
+        return output
+
+
+class BaseOC_Context_Module(nn.Module):
+    """
+    Output only the context features.
+    Parameters:
+        in_features / out_features: the channels of the input / output feature maps.
+        dropout: specify the dropout ratio
+        fusion: We provide two different fusion method, "concat" or "add"
+        size: we find that directly learn the attention weights on even 1/8 feature maps is hard.
+    Return:
+        features after "concat" or "add"
+    """
+
+    def __init__(self, in_channels, out_channels, key_channels, value_channels, dropout, sizes=([1])):
+        super(BaseOC_Context_Module, self).__init__()
+        self.stages = []
+        self.stages = nn.ModuleList(
+            [self._make_stage(in_channels, out_channels, key_channels, value_channels, size) for size in sizes])
+        self.conv_bn_dropout = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
+            nn.BatchNorm2d(out_channels),
+        )
+
+    def _make_stage(self, in_channels, output_channels, key_channels, value_channels, size):
+        return SelfAttentionBlock2D(in_channels,
+                                    key_channels,
+                                    value_channels,
+                                    output_channels,
+                                    size)
+
+    def forward(self, feats):
+        priors = [stage(feats) for stage in self.stages]
+        context = priors[0]
+        for i in range(1, len(priors)):
+            context += priors[i]
+        output = self.conv_bn_dropout(context)
+        return output
+
+
+class ASP_OC_Module(nn.Module):
+    def __init__(self, features, out_features=512, dilations=(12, 24, 36)):
+        super(ASP_OC_Module, self).__init__()
+        self.context = nn.Sequential(nn.Conv2d(features, out_features, kernel_size=3, padding=1, dilation=1, bias=True),
+                                     nn.BatchNorm2d(out_features),
+                                     BaseOC_Context_Module(in_channels=out_features, out_channels=out_features,
+                                                           key_channels=out_features // 2, value_channels=out_features,
+                                                           dropout=0, sizes=([2])))
+        self.conv2 = nn.Sequential(nn.Conv2d(features, out_features, kernel_size=1, padding=0, dilation=1, bias=False),
+                                   nn.BatchNorm2d(out_features))
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(features, out_features, kernel_size=3, padding=dilations[0], dilation=dilations[0], bias=False),
+            nn.BatchNorm2d(out_features))
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(features, out_features, kernel_size=3, padding=dilations[1], dilation=dilations[1], bias=False),
+            nn.BatchNorm2d(out_features))
+        self.conv5 = nn.Sequential(
+            nn.Conv2d(features, out_features, kernel_size=3, padding=dilations[2], dilation=dilations[2], bias=False),
+            nn.BatchNorm2d(out_features))
+
+        self.conv_bn_dropout = nn.Sequential(
+            nn.Conv2d(out_features * 5, out_features, kernel_size=1, padding=0, dilation=1, bias=False),
+            nn.BatchNorm2d(out_features),
+            nn.Dropout2d(0.1)
+        )
+
+    def _cat_each(self, feat1, feat2, feat3, feat4, feat5):
+        assert (len(feat1) == len(feat2))
+        z = []
+        for i in range(len(feat1)):
+            z.append(torch.cat((feat1[i], feat2[i], feat3[i], feat4[i], feat5[i]), 1))
+        return z
+
+    def forward(self, x):
+        if isinstance(x, Variable):
+            _, _, h, w = x.size()
+        elif isinstance(x, tuple) or isinstance(x, list):
+            _, _, h, w = x[0].size()
+        else:
+            raise RuntimeError('unknown input type')
+
+        feat1 = self.context(x)
+        feat2 = self.conv2(x)
+        feat3 = self.conv3(x)
+        feat4 = self.conv4(x)
+        feat5 = self.conv5(x)
+
+        if isinstance(x, Variable):
+            out = torch.cat((feat1, feat2, feat3, feat4, feat5), 1)
+        elif isinstance(x, tuple) or isinstance(x, list):
+            out = self._cat_each(feat1, feat2, feat3, feat4, feat5)
+        else:
+            raise RuntimeError('unknown input type')
+
+        output = self.conv_bn_dropout(out)
+        return output
