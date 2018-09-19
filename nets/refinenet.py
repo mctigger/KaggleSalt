@@ -43,6 +43,17 @@ class PreActivationBottleneckRCU(nn.Module):
         return self.block(x)
 
 
+class DilatedPreActivationRCU(nn.Module):
+    multiplier = 1
+
+    def __init__(self, in_channels, out_channels):
+        super(DilatedPreActivationRCU, self).__init__()
+        self.block = PreActivationBasicBlock(in_channels, out_channels, dilation=3)
+
+    def forward(self, x):
+        return self.block(x)
+
+
 class SERCU(nn.Module):
     multiplier = 1
 
@@ -155,6 +166,30 @@ class MrF(nn.Module):
         return sum
 
 
+class TransposedConvolutionMrF(nn.Module):
+    def __init__(self, channels, scale_factors):
+        super(TransposedConvolutionMrF, self).__init__()
+
+        paths = []
+        for s in scale_factors:
+            if s == 1:
+                paths.append(conv3x3(channels, channels))
+            else:
+                paths.append(nn.ConvTranspose2d(channels, channels, kernel_size=3, stride=s, padding=1, output_padding=1, bias=False))
+
+        self.paths = nn.ModuleList(paths)
+
+    def forward(self, inputs):
+        sum = None
+        for inp, path in zip(inputs, self.paths):
+            if sum is None:
+                sum = path(inp)
+            else:
+                sum = sum + path(inp)
+
+        return sum
+
+
 class CRP(nn.Module):
     def __init__(self, channels):
         super(CRP, self).__init__()
@@ -174,6 +209,35 @@ class CRP(nn.Module):
 
         x = self.pool(x)
         x = self.conv_3(x)
+        residual = residual + x
+
+        return residual
+
+
+class CRP4(nn.Module):
+    def __init__(self, channels):
+        super(CRP4, self).__init__()
+        self.pool = nn.MaxPool2d(kernel_size=5, stride=1, padding=2)
+        self.conv_1 = conv_3x3(channels, channels)
+        self.conv_2 = conv_3x3(channels, channels)
+        self.conv_3 = conv_3x3(channels, channels)
+        self.conv_4 = conv_3x3(channels, channels)
+
+    def forward(self, residual):
+        x = self.pool(residual)
+        x = self.conv_1(x)
+        residual = residual + x
+
+        x = self.pool(x)
+        x = self.conv_2(x)
+        residual = residual + x
+
+        x = self.pool(x)
+        x = self.conv_3(x)
+        residual = residual + x
+
+        x = self.pool(x)
+        x = self.conv_4(x)
         residual = residual + x
 
         return residual
@@ -228,6 +292,24 @@ class RefineNetUpsampleClassifier(nn.Module):
             channels = in_channels
 
         self.classifier = nn.Sequential(*[
+            rcu(rcu.multiplier * channels, channels),
+            rcu(rcu.multiplier * channels, channels),
+            nn.Conv2d(rcu.multiplier * channels, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
+
+
+class ModifiedRefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, in_channels, channels=None, scale_factor=4, rcu=RCU):
+        super(ModifiedRefineNetUpsampleClassifier, self).__init__()
+
+        if channels is None:
+            channels = in_channels
+
+        self.classifier = nn.Sequential(*[
             nn.Conv2d(in_channels, channels * rcu.multiplier, kernel_size=1, bias=True),
             rcu(rcu.multiplier * channels, channels),
             rcu(rcu.multiplier * channels, channels),
@@ -240,7 +322,7 @@ class RefineNetUpsampleClassifier(nn.Module):
 
 
 class RefineNetBlock(nn.Module):
-    def __init__(self, channels, config, crp=CRP, rcu=RCU, dropout=0):
+    def __init__(self, channels, config, crp=CRP, rcu=RCU, mrf=MrF, dropout=0):
         super(RefineNetBlock, self).__init__()
         paths = []
         for in_channels, scale_factor in config:
@@ -254,7 +336,7 @@ class RefineNetBlock(nn.Module):
 
         self.paths = nn.ModuleList(paths)
 
-        self.mrf = MrF(channels*rcu.multiplier, [scale_factor for in_channels, scale_factor in config])
+        self.mrf = mrf(channels*rcu.multiplier, [scale_factor for in_channels, scale_factor in config])
         self.crp = crp(channels*rcu.multiplier)
         self.out = rcu(channels*rcu.multiplier, channels)
 
@@ -276,6 +358,7 @@ class RefineNet(nn.Module):
             block_multiplier=4,
             crp=CRP,
             rcu=RCU,
+            mrf=MrF,
             classifier=RefineNetUpsampleClassifier,
             dropout=0
     ):
@@ -290,10 +373,10 @@ class RefineNet(nn.Module):
         if num_features_base is None:
             num_features_base = [64, 128, 256, 512]
 
-        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, mrf=mrf, dropout=dropout)
+        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, mrf=mrf, dropout=dropout)
+        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, mrf=mrf, dropout=dropout)
+        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, mrf=mrf, dropout=dropout)
 
         self.classifier = classifier(num_features[3])
 
