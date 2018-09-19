@@ -3,25 +3,11 @@ from torch import nn
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
-from nets.modules import SCSEBlock, SelfAttentionBlock2D
+from nets.modules import SCSEBlock, SelfAttentionBlock2D, PreActivationBasicBlock, PreActivationBottleneckBlock
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
     return nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=bias)
-
-
-class RefineNetUpsampleClassifier(nn.Module):
-    def __init__(self, num_features, scale_factor=4):
-        super(RefineNetUpsampleClassifier, self).__init__()
-        self.classifier = nn.Sequential(*[
-            RCU(num_features, num_features),
-            RCU(num_features, num_features),
-            nn.Conv2d(num_features, 1, kernel_size=1, bias=True),
-            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
-        ])
-
-    def forward(self, x):
-        return self.classifier(x)
 
 
 class RCU(nn.Module):
@@ -30,6 +16,28 @@ class RCU(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(RCU, self).__init__()
         self.block = BasicBlock(in_channels, out_channels)
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class PreActivationRCU(nn.Module):
+    multiplier = 1
+
+    def __init__(self, in_channels, out_channels):
+        super(PreActivationRCU, self).__init__()
+        self.block = PreActivationBasicBlock(in_channels, out_channels)
+
+    def forward(self, x):
+        return self.block(x)
+
+
+class PreActivationBottleneckRCU(nn.Module):
+    multiplier = 4
+
+    def __init__(self, in_channels, out_channels):
+        super(PreActivationBottleneckRCU, self).__init__()
+        self.block = PreActivationBottleneckBlock(in_channels, out_channels)
 
     def forward(self, x):
         return self.block(x)
@@ -171,6 +179,30 @@ class CRP(nn.Module):
         return residual
 
 
+class AverageCRP(nn.Module):
+    def __init__(self, channels):
+        super(AverageCRP, self).__init__()
+        self.pool = nn.AvgPool2d(kernel_size=5, stride=1, padding=2)
+        self.conv_1 = conv_3x3(channels, channels)
+        self.conv_2 = conv_3x3(channels, channels)
+        self.conv_3 = conv_3x3(channels, channels)
+
+    def forward(self, residual):
+        x = self.pool(residual)
+        x = self.conv_1(x)
+        residual = residual + x
+
+        x = self.pool(x)
+        x = self.conv_2(x)
+        residual = residual + x
+
+        x = self.pool(x)
+        x = self.conv_3(x)
+        residual = residual + x
+
+        return residual
+
+
 class OC(nn.Module):
     def __init__(self, channels, scale=1):
         super(OC, self).__init__()
@@ -186,6 +218,25 @@ class OC(nn.Module):
         x = self.conv_bn(x)
 
         return x
+
+
+class RefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, in_channels, channels=None, scale_factor=4, rcu=RCU):
+        super(RefineNetUpsampleClassifier, self).__init__()
+
+        if channels is None:
+            channels = in_channels
+
+        self.classifier = nn.Sequential(*[
+            nn.Conv2d(in_channels, channels * rcu.multiplier, kernel_size=1, bias=True),
+            rcu(rcu.multiplier * channels, channels),
+            rcu(rcu.multiplier * channels, channels),
+            nn.Conv2d(rcu.multiplier * channels, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
 
 
 class RefineNetBlock(nn.Module):
@@ -244,7 +295,7 @@ class RefineNet(nn.Module):
         self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
         self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
 
-        self.classifier = classifier(num_features[3]*rcu.multiplier)
+        self.classifier = classifier(num_features[3])
 
         self.encoder = encoder
 

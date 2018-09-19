@@ -11,8 +11,10 @@ def ensemble_mean(p, threshold=0.5):
 def ensemble_vote(p):
     return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
 
+
 def ensemble_mean_mean(p):
     return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
+
 
 experiments = [
     'nopoolrefinenet_dpn92_oc',
