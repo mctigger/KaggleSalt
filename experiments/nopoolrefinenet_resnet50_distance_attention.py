@@ -3,7 +3,6 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models import resnet
@@ -11,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, DistanceCRP
 from nets.backbones import NoPoolResNetBase
 from metrics import iou, mAP
 import datasets
@@ -29,16 +28,16 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(NoPoolResNetBase(
-            resnet.resnet50(pretrained=True)),
+        self.net = RefineNet(
+            NoPoolResNetBase(resnet.resnet50(pretrained=True)),
             num_features=128,
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
+            crp=DistanceCRP
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
-
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)

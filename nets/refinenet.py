@@ -3,7 +3,7 @@ from torch import nn
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
-from nets.modules import SCSEBlock, SelfAttentionBlock2D, PreActivationBasicBlock, PreActivationBottleneckBlock
+from nets.modules import SCSEBlock, SelfAttentionBlock2D, PreActivationBasicBlock, PreActivationBottleneckBlock, SpatialAttentionModule, DistanceAttentionModule
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
@@ -203,6 +203,59 @@ class AverageCRP(nn.Module):
         return residual
 
 
+class SpatialAttentionContext(nn.Module):
+    def __init__(self, channels, scales):
+        super(SpatialAttentionContext, self).__init__()
+
+        modules = []
+
+        for s in scales:
+            modules.append(nn.Sequential(
+                nn.AvgPool2d(s),
+                SpatialAttentionModule(channels, kernel_size=8),
+                nn.Upsample(scale_factor=s, mode='bilinear')
+            ))
+
+        self.attention_modules = nn.ModuleList(modules)
+
+    def forward(self, residual):
+
+        for at in self.attention_modules:
+            x = at(residual)
+            residual = residual + x
+
+        return residual
+
+
+class DistanceCRP(nn.Module):
+    def __init__(self, channels):
+        super(DistanceCRP, self).__init__()
+        self.pool = nn.MaxPool2d(kernel_size=5, stride=1, padding=2)
+        self.conv_1 = conv_3x3(channels, channels)
+        self.conv_2 = conv_3x3(channels, channels)
+        self.conv_3 = conv_3x3(channels, channels)
+
+        self.distance_attention = DistanceAttentionModule(channels)
+
+    def forward(self, residual):
+        x = self.pool(residual)
+        x = self.conv_1(x)
+        residual = residual + x
+
+        x = self.pool(x)
+        x = self.conv_2(x)
+        residual = residual + x
+
+        x = self.pool(x)
+        x = self.conv_3(x)
+        residual = residual + x
+
+        x = self.distance_attention(residual)
+        residual = x + residual
+
+        return residual
+
+
 class OC(nn.Module):
     def __init__(self, channels, scale=1):
         super(OC, self).__init__()
@@ -267,6 +320,38 @@ class RefineNetBlock(nn.Module):
         return x
 
 
+class DeepRefineNetBlock(nn.Module):
+    def __init__(self, channels, config, crp=CRP, rcu=RCU, dropout=0):
+        super(DeepRefineNetBlock, self).__init__()
+        paths = []
+        for in_channels, scale_factor in config:
+            p = nn.Sequential(*[
+                nn.Conv2d(in_channels, channels*rcu.multiplier, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.Dropout2d(dropout),
+                rcu(channels*rcu.multiplier, channels),
+                rcu(channels*rcu.multiplier, channels)
+            ])
+            paths.append(p)
+
+        self.paths = nn.ModuleList(paths)
+
+        self.mrf = MrF(channels*rcu.multiplier, [scale_factor for in_channels, scale_factor in config])
+        self.crp = crp(channels*rcu.multiplier)
+        self.out = nn.Sequential(
+            rcu(channels * rcu.multiplier, channels),
+            rcu(channels * rcu.multiplier, channels),
+            rcu(channels * rcu.multiplier, channels),
+        )
+
+    def forward(self, inputs):
+        paths = [path(inp) for inp, path in zip(inputs, self.paths)]
+        x = self.mrf(paths)
+        x = self.crp(x)
+        x = self.out(x)
+
+        return x
+
+
 class RefineNet(nn.Module):
     def __init__(
             self,
@@ -277,6 +362,7 @@ class RefineNet(nn.Module):
             crp=CRP,
             rcu=RCU,
             classifier=RefineNetUpsampleClassifier,
+            block=RefineNetBlock,
             dropout=0
     ):
         super(RefineNet, self).__init__()
@@ -290,10 +376,58 @@ class RefineNet(nn.Module):
         if num_features_base is None:
             num_features_base = [64, 128, 256, 512]
 
-        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
-        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_0 = block(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_1 = block(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_2 = block(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+        self.refine_3 = block(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=crp, rcu=rcu, dropout=dropout)
+
+        self.classifier = classifier(num_features[3])
+
+        self.encoder = encoder
+
+    def forward(self, x):
+        x_0, x_1, x_2, x_3 = self.encoder(x)
+
+        x = self.refine_0([x_3])
+        x = self.refine_1([x_2, x])
+        x = self.refine_2([x_1, x])
+        x = self.refine_3([x_0, x])
+
+        x = self.classifier(x)
+
+        return x
+
+
+def spatial_attention(scales):
+    return lambda channels: SpatialAttentionContext(channels, scales)
+
+
+class SpatialAttentionRefineNet(nn.Module):
+    def __init__(
+            self,
+            encoder,
+            num_features=None,
+            num_features_base=None,
+            block_multiplier=4,
+            rcu=RCU,
+            classifier=RefineNetUpsampleClassifier,
+            dropout=0
+    ):
+        super(SpatialAttentionRefineNet, self).__init__()
+
+        if num_features is None:
+            num_features = [256*2, 256, 256, 256]
+
+        if not isinstance(num_features, list):
+            num_features = [num_features*2, num_features, num_features, num_features]
+
+        if num_features_base is None:
+            num_features_base = [64, 128, 256, 512]
+
+        self.refine_0 = RefineNetBlock(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp=spatial_attention([1]), rcu=rcu, dropout=dropout)
+        self.refine_1 = RefineNetBlock(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp=spatial_attention([2, 1]), rcu=rcu, dropout=dropout)
+        self.refine_2 = RefineNetBlock(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp=spatial_attention([4, 2, 1]), rcu=rcu, dropout=dropout)
+        self.refine_3 = RefineNetBlock(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp=spatial_attention([8, 4, 2, 1]), rcu=rcu, dropout=dropout)
 
         self.classifier = classifier(num_features[3])
 

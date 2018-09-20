@@ -78,6 +78,73 @@ class PreActivationBottleneckBlock(nn.Module):
         return x
 
 
+class SpatialAttentionModule(nn.Module):
+    def __init__(self, channels, squeeze=8, kernel_size=8):
+        super(SpatialAttentionModule, self).__init__()
+
+        self.kernel_size = kernel_size
+
+        mlp_channels = squeeze*kernel_size*kernel_size
+        self.downsample = nn.Conv2d(channels, mlp_channels, kernel_size=kernel_size, stride=kernel_size)
+
+        self.mlp = nn.Sequential(
+            nn.ReLU(),
+            nn.Conv2d(mlp_channels, mlp_channels, kernel_size=1),
+            nn.ReLU(),
+            nn.Conv2d(mlp_channels, channels, kernel_size=1),
+        )
+
+        self.upsample = nn.Upsample(scale_factor=kernel_size)
+        self.scale = nn.Sigmoid()
+
+    def forward(self, x):
+        inp = x
+        x = self.downsample(x)
+        x = self.mlp(x)
+        x = self.upsample(x)
+        x = self.scale(x)
+        x = x * inp
+
+        return x
+
+
+class DistanceAttentionModule(nn.Module):
+    def __init__(self, channels):
+        super(DistanceAttentionModule, self).__init__()
+
+        self.conv1 = conv3x3(channels + 1, channels)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv2 = conv3x3(channels + 1, channels)
+
+        self.relu = nn.ReLU()
+
+    def create_distance_tensor(self, size):
+        horizontal = torch.cat([torch.arange(size // 2, 0, -1), torch.arange(1, size // 2 + 1)])\
+            .unsqueeze(0)\
+            .expand(size, size)\
+            .float()
+
+        vertical = torch.cat([torch.arange(size // 2, 0, -1), torch.arange(1, size // 2 + 1)])\
+            .unsqueeze(1)\
+            .expand(size,size)\
+            .float()
+
+        distance = torch.sqrt(vertical * vertical + horizontal * horizontal)
+        normalized_distance = distance / torch.max(distance)
+
+        return normalized_distance
+
+    def forward(self, x):
+        distance = self.create_distance_tensor(x.size(2)).unsqueeze(0).unsqueeze(0).expand(x.size(0), -1, -1, -1).to(x.device)
+        x = torch.cat([x, distance], dim=1)
+        x = self.conv2(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = torch.cat([x, distance], dim=1)
+        x = self.conv2(x)
+
+        return x
+
 
 class SCSEModule(nn.Module):
     def __init__(self, channel, reduction=16, activation=nn.ReLU):

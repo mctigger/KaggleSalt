@@ -1,6 +1,8 @@
 experiment train_iou train_loss train_mAP val_iou val_mAP
 nopoolrefinenet_dpn98 0.9362 0.5282 0.9198 0.8852 0.8628
 nopoolrefinenet_dpn92 0.9401 0.4692 0.9258 0.8841 0.8624
+nopoolrefinenet_dpn92_preact 0.9461 0.4521 0.9317 0.8843 0.8622
+nopoolrefinenet_dpn92_augmentation 0.9217 0.6354 0.8987 0.8849 0.8618
 nopoollkm_dpn92_pyramid_concat 0.9407 0.4843 0.9267 0.8829 0.8611
 nopoollkm_dpn92 0.9502 0.3985 0.9388 0.8802 0.8576
 nopoollkm_resnet50_pyramid_concat 0.9376 0.5174 0.9197 0.8776 0.8533

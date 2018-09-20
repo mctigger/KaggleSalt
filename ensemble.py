@@ -17,13 +17,10 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_dpn98',
-    'nopoolrefinenet_dpn92',
-    'nopoollkm_dpn92_pyramid_concat',
-    'nopoollkm_dpn92'
+    'nopoolrefinenet_dpn92_preact',
 ]
 
-ensemble_name = 'ensemble'
+ensemble_name = 'nopoolrefinenet_dpn92_preact'
 
 test_predictions_experiment = []
 
