@@ -2,18 +2,23 @@ import torch
 from torch.autograd import Variable
 from torch import nn
 from torch.nn import functional as F
-from torchvision.models.resnet import conv3x3
+
+
+def conv3x3(in_planes, out_planes, stride=1, dilation=1):
+    """3x3 convolution with padding"""
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+                     padding=dilation, bias=False, dilation=dilation)
 
 
 class PreActivationBasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, dilation=1):
         super(PreActivationBasicBlock, self).__init__()
-        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.conv1 = conv3x3(inplanes, planes, stride, dilation)
         self.bn1 = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes)
+        self.conv2 = conv3x3(planes, planes, stride=1, dilation=dilation)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
@@ -381,7 +386,6 @@ class SelfAttentionBlock2D(_SelfAttentionBlock):
                                                    value_channels,
                                                    out_channels,
                                                    scale)
-
 
 class BaseOC_Module(nn.Module):
     """

@@ -45,7 +45,6 @@ class ImageDataset(Dataset):
             return image, mask
 
 
-
 class StackingDataset(Dataset):
     def __init__(self, samples, path, transforms, predictions=[], transforms_image=None, test=False):
         self.samples = samples
@@ -86,13 +85,11 @@ class StackingDataset(Dataset):
 
 
 class AnalysisDataset(Dataset):
-    def __init__(self, samples, path, transforms, predictions=[], transforms_image=None, mode='train'):
+    def __init__(self, samples, path, transforms, predictions):
         self.samples = samples
         self.path = path
         self.predictions = predictions
         self.transforms = transforms
-        self.transforms_image = transforms_image
-        self.mode = mode
 
     def __len__(self):
         return len(self.samples)
@@ -100,30 +97,16 @@ class AnalysisDataset(Dataset):
     def __getitem__(self, index):
         id = self.samples[index]
 
-        model_predictions = [p[id] for p in self.predictions]
-        image = np.concatenate(model_predictions, axis=0)
-
-        #image = np.concatenate((img_as_float(imread(join(self.path, 'images', id) + '.png')), image), axis=2)
+        image = self.predictions[id]
 
         t = next(self.transforms)
 
         image = t(image)
 
-        if self.transforms_image:
-            t_image = next(self.transforms_image)
-            image = t_image(image)
-
-        if self.mode == 'test':
-            return image, id
-
         mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
         mask = t(mask)
 
-        if self.mode == 'train':
-            return image, mask
-
-        if self.mode == 'analyze':
-            return image, mask, id
+        return image, mask, id
 
 
 class ImageDatasetRemoveSmall(Dataset):
