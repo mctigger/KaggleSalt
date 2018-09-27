@@ -84,29 +84,28 @@ class PreActivationBottleneckBlock(nn.Module):
 
 
 class SpatialAttentionModule(nn.Module):
-    def __init__(self, channels, squeeze=8, kernel_size=8):
+    def __init__(self, channels, size):
         super(SpatialAttentionModule, self).__init__()
 
-        self.kernel_size = kernel_size
-
-        mlp_channels = squeeze*kernel_size*kernel_size
-        self.downsample = nn.Conv2d(channels, mlp_channels, kernel_size=kernel_size, stride=kernel_size)
+        self.downsample = nn.AdaptiveAvgPool2d(size)
+        self.squeeze = nn.Conv2d(channels, 1, kernel_size=1, bias=False)
 
         self.mlp = nn.Sequential(
+            nn.BatchNorm1d(size ** 2),
             nn.ReLU(),
-            nn.Conv2d(mlp_channels, mlp_channels, kernel_size=1),
+            nn.Linear(size ** 2, size ** 2, bias=False),
+            nn.BatchNorm1d(size ** 2),
             nn.ReLU(),
-            nn.Conv2d(mlp_channels, channels, kernel_size=1),
+            nn.Linear(size ** 2, size ** 2, bias=False)
         )
-
-        self.upsample = nn.Upsample(scale_factor=kernel_size)
         self.scale = nn.Sigmoid()
 
     def forward(self, x):
+        b, c, h, w = x.size()
         inp = x
         x = self.downsample(x)
-        x = self.mlp(x)
-        x = self.upsample(x)
+        x = self.mlp(x.view(b, -1)).view(b, 1, h, w)
+        x = F.interpolate(x, size=(h, w), mode='bilinear')
         x = self.scale(x)
         x = x * inp
 
@@ -117,9 +116,7 @@ class DistanceAttentionModule(nn.Module):
     def __init__(self, channels):
         super(DistanceAttentionModule, self).__init__()
 
-        self.conv1 = conv3x3(channels + 1, channels)
-        self.bn1 = nn.BatchNorm2d(channels)
-        self.conv2 = conv3x3(channels + 1, channels)
+        self.conv = conv3x3(channels + 1, channels)
 
         self.relu = nn.ReLU()
 
@@ -142,12 +139,7 @@ class DistanceAttentionModule(nn.Module):
     def forward(self, x):
         distance = self.create_distance_tensor(x.size(2)).unsqueeze(0).unsqueeze(0).expand(x.size(0), -1, -1, -1).to(x.device)
         x = torch.cat([x, distance], dim=1)
-        x = self.conv2(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = torch.cat([x, distance], dim=1)
-        x = self.conv2(x)
-
+        x = self.conv(x)
         return x
 
 
@@ -178,10 +170,64 @@ class SCSEModule(nn.Module):
         return chn_se + spa_se
 
 
+
+class ModifiedSCSEModule(nn.Module):
+    def __init__(self, channel, reduction=16, activation=nn.ReLU):
+        super(ModifiedSCSEModule, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+        self.channel_excitation = nn.Sequential(nn.Linear(channel, int(channel // reduction)),
+                                                activation(inplace=True),
+                                                nn.Linear(int(channel // reduction), channel),
+                                                nn.Sigmoid())
+
+        self.spatial_se = nn.Sequential(nn.Conv2d(channel, 1, kernel_size=1,
+                                                  stride=1, padding=0, bias=False),
+                                        nn.Sigmoid())
+
+    def forward(self, x):
+        bahs, chs, _, _ = x.size()
+
+        # Returns a new tensor with the same data as the self tensor but of a different size.
+        chn_se = self.avg_pool(x).view(bahs, chs)
+        chn_se = self.channel_excitation(chn_se).view(bahs, chs, 1, 1)
+
+        spa_se = self.spatial_se(x)
+        return x * chn_se * spa_se
+
+
+
+class DualSCSEModule(nn.Module):
+    def __init__(self, channel, reduction=16, activation=nn.ReLU):
+        super(DualSCSEModule, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+        self.channel_excitation = nn.Sequential(nn.Linear(channel, int(channel // reduction)),
+                                                activation(inplace=True),
+                                                nn.Linear(int(channel // reduction), channel),
+                                                nn.Sigmoid())
+
+        self.spatial_se = nn.Sequential(nn.Conv2d(channel, 1, kernel_size=1,
+                                                  stride=1, padding=0, bias=False),
+                                        nn.Sigmoid())
+
+    def forward(self, high, low):
+        bahs, chs, _, _ = low.size()
+
+        # Returns a new tensor with the same data as the self tensor but of a different size.
+        chn_se = self.avg_pool(low).view(bahs, chs)
+        chn_se = self.channel_excitation(chn_se).view(bahs, chs, 1, 1)
+        chn_se = high * chn_se
+
+        spa_se = self.spatial_se(low)
+        spa_se = high * spa_se
+        return chn_se + spa_se
+
+
 class SCSEBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, reduction=16, activation=nn.ReLU):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, reduction=16, activation=nn.ReLU, scse=SCSEModule):
         super(SCSEBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
@@ -190,7 +236,7 @@ class SCSEBlock(nn.Module):
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         self.stride = stride
-        self.scse_module = SCSEModule(planes, reduction=reduction, activation=activation)
+        self.scse_module = scse(planes, reduction=reduction, activation=activation)
 
     def forward(self, x):
         residual = x
@@ -405,7 +451,7 @@ class BaseOC_Module(nn.Module):
             [self._make_stage(in_channels, out_channels, key_channels, value_channels, size) for size in sizes])
         self.conv_bn_dropout = nn.Sequential(
             nn.Conv2d(2 * in_channels, out_channels, kernel_size=1, padding=0),
-            InPlaceABNSync(out_channels),
+            nn.BatchNorm2d(out_channels),
             nn.Dropout2d(dropout)
         )
 
@@ -437,7 +483,7 @@ class BaseOC_Context_Module(nn.Module):
         features after "concat" or "add"
     """
 
-    def __init__(self, in_channels, out_channels, key_channels, value_channels, dropout, sizes=([1])):
+    def __init__(self, in_channels, out_channels, key_channels, value_channels, dropout=0, sizes=([1])):
         super(BaseOC_Context_Module, self).__init__()
         self.stages = []
         self.stages = nn.ModuleList(
@@ -445,6 +491,7 @@ class BaseOC_Context_Module(nn.Module):
         self.conv_bn_dropout = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=1, padding=0),
             nn.BatchNorm2d(out_channels),
+            nn.Dropout2d(dropout)
         )
 
     def _make_stage(self, in_channels, output_channels, key_channels, value_channels, size):
@@ -469,8 +516,7 @@ class ASP_OC_Module(nn.Module):
         self.context = nn.Sequential(nn.Conv2d(features, out_features, kernel_size=3, padding=1, dilation=1, bias=True),
                                      nn.BatchNorm2d(out_features),
                                      BaseOC_Context_Module(in_channels=out_features, out_channels=out_features,
-                                                           key_channels=out_features // 2, value_channels=out_features,
-                                                           dropout=0, sizes=([2])))
+                                                           key_channels=out_features // 2, value_channels=out_features, sizes=([2])))
         self.conv2 = nn.Sequential(nn.Conv2d(features, out_features, kernel_size=1, padding=0, dilation=1, bias=False),
                                    nn.BatchNorm2d(out_features))
         self.conv3 = nn.Sequential(
@@ -519,3 +565,96 @@ class ASP_OC_Module(nn.Module):
 
         output = self.conv_bn_dropout(out)
         return output
+
+
+
+class PAM_Module(nn.Module):
+    """ Position attention module"""
+    #Ref from SAGAN
+    def __init__(self, in_dim):
+        super(PAM_Module, self).__init__()
+        self.chanel_in = in_dim
+
+        self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim//8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+        self.softmax = nn.Softmax(dim=-1)
+    def forward(self, x):
+        """
+            inputs :
+                x : input feature maps( B X C X H X W)
+            returns :
+                out : attention value + input feature
+                attention: B X (HxW) X (HxW)
+        """
+        m_batchsize, C, height, width = x.size()
+        proj_query = self.query_conv(x).view(m_batchsize, -1, width*height).permute(0, 2, 1)
+        proj_key = self.key_conv(x).view(m_batchsize, -1, width*height)
+        energy = torch.bmm(proj_query, proj_key)
+        attention = self.softmax(energy)
+        proj_value = self.value_conv(x).view(m_batchsize, -1, width*height)
+
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        out = out.view(m_batchsize, C, height, width)
+
+        out = self.gamma*out + x
+        return out
+
+
+class CAM_Module(nn.Module):
+    """ Channel attention module"""
+    def __init__(self, in_dim):
+        super(CAM_Module, self).__init__()
+        self.chanel_in = in_dim
+
+
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.softmax  = nn.Softmax(dim=-1)
+    def forward(self,x):
+        """
+            inputs :
+                x : input feature maps( B X C X H X W)
+            returns :
+                out : attention value + input feature
+                attention: B X C X C
+        """
+        m_batchsize, C, height, width = x.size()
+        proj_query = x.view(m_batchsize, C, -1)
+        proj_key = x.view(m_batchsize, C, -1).permute(0, 2, 1)
+        energy = torch.bmm(proj_query, proj_key)
+        energy_new = torch.max(energy, -1, keepdim=True)[0].expand_as(energy)-energy
+        attention = self.softmax(energy_new)
+        proj_value = x.view(m_batchsize, C, -1)
+
+        out = torch.bmm(attention, proj_value)
+        out = out.view(m_batchsize, C, height, width)
+
+        out = self.gamma*out + x
+        return out
+
+
+class DANetModule(nn.Module):
+    def __init__(self, channels):
+        super(DANetModule, self).__init__()
+
+        self.cam = CAM_Module(channels)
+        self.pam = PAM_Module(channels)
+
+        self.conv_cam1 = conv3x3(channels, channels)
+        self.conv_cam2 = conv3x3(channels, channels)
+
+        self.conv_pam1 = conv3x3(channels, channels)
+        self.conv_pam2 = conv3x3(channels, channels)
+
+    def forward(self, x):
+        cam = self.conv_cam1(x)
+        cam = self.cam(cam)
+        cam = self.conv_cam2(cam)
+
+        pam = self.conv_pam1(x)
+        pam = self.pam(pam)
+        pam = self.conv_pam2(pam)
+
+        return cam + pam

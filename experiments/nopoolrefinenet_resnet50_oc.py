@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, OC
+from nets.refinenet import RefineNet, OCRefineNetUpsampleClassifier
 from nets.backbones import NoPoolResNetBase
 from metrics import iou, mAP
 import datasets
@@ -31,8 +31,7 @@ class Model:
         self.net = RefineNet(NoPoolResNetBase(
             resnet.resnet50(pretrained=True)),
             num_features=128,
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
-            crp=lambda channels: OC(channels, scale=1)
+            classifier=lambda c: OCRefineNetUpsampleClassifier(c, scale_factor=2)
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -141,7 +140,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=16,
+            batch_size=32,
             shuffle=True
         )
 
@@ -177,7 +176,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=16
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -212,7 +211,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=16
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

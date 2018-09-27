@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, OC
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, OC, CRP
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
@@ -34,7 +34,7 @@ class Model:
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
-            crp=lambda channels: OC(channels, scale=2)
+            crp=[OC, OC, CRP, CRP]
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),

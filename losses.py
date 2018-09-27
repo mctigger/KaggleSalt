@@ -171,7 +171,7 @@ class SoftDiceWithLogitsLoss(nn.Module):
         self.dice = SoftDiceLoss()
 
     def forward(self, prediction, target):
-        return self.dice(F.sigmoid(prediction), target)
+        return self.dice(torch.sigmoid(prediction), target)
 
 
 class SoftDicePerImageWithLogitsLoss(nn.Module):
@@ -180,7 +180,7 @@ class SoftDicePerImageWithLogitsLoss(nn.Module):
         self.dice = SoftDicePerImageLoss()
 
     def forward(self, prediction, target):
-        return self.dice(F.sigmoid(prediction), target)
+        return self.dice(torch.sigmoid(prediction), target)
 
 
 class SoftDiceLoss(nn.Module):
@@ -220,7 +220,7 @@ class DiceScore(nn.Module):
         self.threshold = threshold
 
     def forward(self, logits, labels):
-        probs = F.sigmoid(logits)
+        probs = torch.sigmoid(logits)
         num = labels.size(0)
         predicts = (probs.view(num, -1) > self.threshold).float()
         labels = labels.view(num, -1)
@@ -242,7 +242,7 @@ class FocalLoss2d(nn.Module):
             if class_weight is None:
                 class_weight = [1] * 2  # [0.5, 0.5]
 
-            prob = F.sigmoid(logit)
+            prob = torch.sigmoid(logit)
             prob = prob.view(-1, 1)
             prob = torch.cat((1 - prob, prob), 1)
             select = torch.FloatTensor(len(prob), 2).zero_().cuda()

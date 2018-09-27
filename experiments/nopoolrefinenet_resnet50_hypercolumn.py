@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet_hypercolumn import HypercolumnRefineNet, RefineNetUpsampleClassifier
+from nets.refinenet_hypercolumn import HypercolumnCatRefineNet, RefineNetUpsampleClassifier
 from nets.backbones import NoPoolResNetBase
 from metrics import iou, mAP
 import datasets
@@ -28,7 +28,7 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = HypercolumnRefineNet(
+        self.net = HypercolumnCatRefineNet(
             NoPoolResNetBase(resnet.resnet50(pretrained=True)),
             num_features=128,
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)

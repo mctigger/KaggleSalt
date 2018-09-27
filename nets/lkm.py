@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torchvision.models.resnet import conv3x3
 
-from .modules import SCSEBlock
+from .modules import SCSEBlock, SCSEModule
 from .refinenet import RCU
 
 
@@ -128,6 +128,22 @@ class GCN(nn.Module):
         x_b = self.conv_a_2(x_b)
 
         return x_a + x_b
+
+
+class SCSEGCN(GCN):
+    def __init__(self, in_channels, channels, kernel_size=7):
+        super(SCSEGCN, self).__init__(in_channels, channels, kernel_size)
+
+        self.scse = SCSEModule(channels, reduction=16)
+
+    def forward(self, x):
+        x_a = self.conv_a_1(x)
+        x_a = self.conv_a_2(x_a)
+
+        x_b = self.conv_a_1(x)
+        x_b = self.conv_a_2(x_b)
+
+        return self.scse(x_a + x_b)
 
 
 class NoUpsampleClassifier(nn.Module):

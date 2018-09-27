@@ -50,3 +50,17 @@ class UNet(nn.Module):
         x = self.classifier(x)
 
         return x
+
+
+class StackingFCN(nn.Module):
+    def __init__(self, in_channels, filter_nr=32, dropout_2d=0.0):
+        super().__init__()
+        self.dropout_2d = dropout_2d
+
+        self.conv = conv_3x3(in_channels, filter_nr)
+
+        self.final = nn.Sequential(nn.Conv2d(filter_nr, 1, kernel_size=1, padding=0))
+
+    def forward(self, x):
+        x = F.dropout2d(self.conv(x), p=self.dropout_2d)
+        return self.final(x)

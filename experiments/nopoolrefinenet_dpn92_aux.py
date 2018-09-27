@@ -2,7 +2,7 @@ import os
 import pathlib
 
 import torch
-from torch.nn import DataParallel
+from torch.nn import DataParallel, functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -63,7 +63,7 @@ class Model:
     def predict_raw(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions, _ = net(tta.transform_forward(images))
             masks_predictions = tta.transform_backward(masks_predictions)
             tta_masks.append(masks_predictions)
 
@@ -74,7 +74,7 @@ class Model:
     def predict(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions, _ = net(tta.transform_forward(images))
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
@@ -152,9 +152,11 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = net(images)
+                masks_predictions, aux = net(images)
 
-                loss = criterion(masks_predictions, masks_targets)
+                aux_target = (F.interpolate(masks_targets, scale_factor=1/4, mode='bilinear', align_corners=True) + F.avg_pool2d(masks_targets, 4)) / 2
+
+                loss = (criterion(masks_predictions, masks_targets) + 0.4 * criterion(aux, aux_target)) / 1.4
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()

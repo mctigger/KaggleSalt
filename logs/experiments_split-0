@@ -1,0 +1,14 @@
+nopoolrefinenet_resnet34_ndadam_hypercolumn_cat 0.9390 0.4842 0.9246 0.8786 0.8560
+nopoolrefinenet_resnet34_ndadam_hypercolumn_add 0.9375 0.4846 0.9231 0.8777 0.8512
+nopoolrefinenet_resnet34_ndadam_identity_crp 0.9409 0.5013 0.9240 0.8761 0.8504
+nopoolrefinenet_resnet34_ndadam_scse_block 0.9363 0.5253 0.9186 0.8745 0.8494
+nopoolrefinenet_resnet34_scse_ndadam 0.9313 0.5485 0.9145 0.8732 0.8490
+nopoolrefinenet_resnet34 0.9302 0.5810 0.9101 0.8728 0.8489
+nopoolrefinenet_resnet34_ndadam 0.9221 0.6654 0.8998 0.8730 0.8475
+nopoolrefinenet_resnet34_ndadam_original_crp 0.9204 0.6608 0.8980 0.8761 0.8464
+nopoolrefinenet_resnet34_scse_modified_ndadam 0.9335 0.5466 0.9167 0.8715 0.8457
+nopoolrefinenet_resnet34_scse 0.9244 0.5618 0.9072 0.8684 0.8449
+nopoolrefinenet_resnet34_scse_padam 0.9168 0.6638 0.8958 0.8670 0.8427
+nopoolrefinenet_resnet34_scse_reduceonplateau 0.9089 0.7453 0.8862 0.8636 0.8410
+nopoolrefinenet_resnet34_scse_sgd 0.9019 0.7697 0.8756 0.8654 0.8399
+nopoolrefinenet_resnet34_scse_sgd_cyclic 0.9082 0.7512 0.8809 0.8651 0.8370
