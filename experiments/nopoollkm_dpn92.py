@@ -3,10 +3,8 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.nn import functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from torchvision.models import resnet
 from tqdm import tqdm
 
 from ela import transformations, generator, random

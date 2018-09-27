@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, PreActivationRCU
+from nets.refinenet import RefineNet, ModifiedRefineNetUpsampleClassifier, PreActivationRCU
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
@@ -33,7 +33,7 @@ class Model:
             num_features=128,
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2, rcu=PreActivationRCU),
+            classifier=lambda c: ModifiedRefineNetUpsampleClassifier(c, scale_factor=2, rcu=PreActivationRCU),
             rcu=PreActivationRCU
         )
         self.tta = [

@@ -22,7 +22,6 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
-torch.backends.cudnn.benchmark = True
 
 class Model:
     def __init__(self, name, split):

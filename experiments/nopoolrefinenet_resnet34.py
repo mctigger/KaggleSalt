@@ -1,10 +1,9 @@
 import os
 import pathlib
-from itertools import chain
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam, SGD
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 from torchvision.models.resnet import resnet34
 from tqdm import tqdm
@@ -86,23 +85,11 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        ignored_params = list(map(id, chain(
-            net.module.encoder.parameters(),
-        )))
-
-        base_params = filter(lambda p: id(p) not in ignored_params, net.parameters())
-
-        optimizer = SGD([
-            {'params': base_params, 'lr': 1},
-            {'params': net.module.encoder.parameters(), 'lr': 0.1},
-        ], lr=1, weight_decay=1e-4, momentum=0.9, nesterov=True)
-
-        lr_scheduler = utils.MultCyclicLR(optimizer, 5, {
-            0: (0.5e-2, 0.5e-4),
-            60: (1e-3, 1e-5),
-            120: (0.5e-3, 0.5e-4),
-            160: (1e-4, 1e-6),
-            190: (0.5e-4, 0.5e-6),
+        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        lr_scheduler = utils.CyclicLR(optimizer, 5, {
+            0: (1e-4, 1e-6),
+            100: (0.5e-4, 1e-6),
+            160: (1e-5, 1e-6),
         })
 
         epochs = 200
@@ -153,7 +140,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=32,
+            batch_size=16,
             shuffle=True
         )
 
@@ -189,7 +176,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -224,7 +211,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=64
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
@@ -263,6 +250,8 @@ def main():
         test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
+
+        break
 
     experiment_logger.save()
 

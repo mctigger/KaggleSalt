@@ -2,18 +2,17 @@ import os
 import pathlib
 
 import torch
-from torch.nn import DataParallel, ELU
-from torch.optim import Adam
+from torch.nn import DataParallel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, ELUSCSERCU
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
-from experiments.nopoolrefinenet_dpn92 import Model as BaseModel
 from metrics import iou, mAP
+from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -35,14 +34,10 @@ class Model:
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
-            rcu=ELUSCSERCU
+            block=SCSERefineNetBlock
         )
 
-        #base_model = BaseModel('nopoolrefinenet_dpn92', split)
-        #base_model.load()
-        #self.net.encoder.load_state_dict(base_model.net.encoder.state_dict())
-
-        self.optimizer = Adam(self.net.parameters(), lr=1e-4, weight_decay=1e-4)
+        self.optimizer = NDAdam(self.net.parameters(), lr=1e-4, weight_decay=1e-4)
 
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),

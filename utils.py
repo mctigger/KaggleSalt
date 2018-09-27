@@ -25,6 +25,10 @@ def get_train_samples():
     return np.array([path[:-4] for path in os.listdir('./data/train/images')])
 
 
+def get_aux_samples():
+    return np.array([path[:-4] for path in os.listdir('./data/auxiliary_small/images')])
+
+
 def get_test_samples():
     return np.array([path[:-4] for path in os.listdir('./data/test/images')])
 
@@ -49,6 +53,15 @@ def k_fold():
 
     for i, (train_index, val_index) in enumerate(rs.split(samples)):
         yield samples[train_index], samples[val_index]
+
+
+def test_k_fold():
+    rs = KFold(n_splits=5, shuffle=True, random_state=0)
+    samples = get_test_samples()
+
+    for i, (train_index, val_index) in enumerate(rs.split(samples)):
+        yield samples[val_index]
+
 
 
 def mask_stratified_k_fold():
@@ -360,6 +373,19 @@ class CyclicLR2(_LRScheduler):
         learning_rate = get_triangular_lr_2(epoch, self.stepsize, self.base_lr, self.max_lr)
 
         return [learning_rate for base_lr in self.base_lrs]
+
+
+class PolyLR(_LRScheduler):
+    def __init__(self, optimizer, max_epoch, power=0.9):
+        self.max_epoch = max_epoch
+        self.power = power
+
+        super(PolyLR, self).__init__(optimizer)
+
+    def get_lr(self):
+        epoch = self.last_epoch
+
+        return [base_lr * (1 - epoch / self.max_epoch) ** self.power for base_lr in self.base_lrs]
 
 
 transformations_options = {

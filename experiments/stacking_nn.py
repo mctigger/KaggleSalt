@@ -3,15 +3,14 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ela import generator, random, transformations
 
-from nets.unet import UResNet
-from nets.encoders.resnet import ResNet, BasicBlock
+from nets.stacking_unet import StackingFCN
 from metrics import iou, mAP
+from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -21,7 +20,11 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
-predictions = [utils.TestPredictions('nopoolrefinenet_dpn92', mode='val').load()]
+predictions = [
+    utils.TestPredictions('nopoolrefinenet_dpn92', mode='val').load(),
+    utils.TestPredictions('nopoolrefinenet_dpn92_preact', mode='val').load(),
+    utils.TestPredictions('nopoolrefinenet_dpn98', mode='val').load()
+]
 
 
 class Model:
@@ -29,7 +32,7 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = UResNet(ResNet(BasicBlock, [2, 2, 2, 2], in_channels=8), layers=[2, 2, 2, 2], dropout=0.2)
+        self.net = StackingFCN(6, dropout_2d=0.3)
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
@@ -81,7 +84,7 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-3, 1e-3),
             5: (1e-4, 1e-4),

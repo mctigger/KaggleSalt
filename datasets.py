@@ -10,12 +10,13 @@ from skimage import img_as_float
 
 
 class ImageDataset(Dataset):
-    def __init__(self, samples, path, transforms, transforms_image=None, test=False):
+    def __init__(self, samples, path, transforms, transforms_image=None, test=False, semisupervised_marker=False):
         self.samples = samples
         self.path = path
         self.transforms = transforms
         self.transforms_image = transforms_image
         self.test = test
+        self.semisupervised_marker = semisupervised_marker
 
     def __len__(self):
         return len(self.samples)
@@ -37,12 +38,15 @@ class ImageDataset(Dataset):
 
         if self.test:
             return image, id
-        else:
-            mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
-            mask = t(mask)
-            mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
 
-            return image, mask
+        mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
+        mask = t(mask)
+        mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
+
+        if self.semisupervised_marker:
+            return image, mask, 0
+
+        return image, mask
 
 
 class StackingDataset(Dataset):
@@ -149,7 +153,7 @@ class ImageDatasetRemoveSmall(Dataset):
 
 
 class SemiSupervisedImageDataset(Dataset):
-    def __init__(self, samples, path, transforms, size=None, momentum=0, test_predictions=None):
+    def __init__(self, samples, path, transforms, size=None, momentum=0, test_predictions=None, semisupervised_marker=False):
         if size is None:
             size = len(samples)
 
@@ -159,6 +163,7 @@ class SemiSupervisedImageDataset(Dataset):
         self.size = size
         self.momentum = momentum
         self.mask_predictions = {}
+        self.semisupervised_marker = semisupervised_marker
 
         if test_predictions:
             self.mask_predictions = test_predictions
@@ -187,6 +192,9 @@ class SemiSupervisedImageDataset(Dataset):
         mask = self.mask_predictions[id] > 0.5
         mask = t(mask)
         mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
+
+        if self.semisupervised_marker:
+            return image, mask, 1
 
         return image, mask
 
