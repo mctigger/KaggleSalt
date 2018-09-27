@@ -3,7 +3,6 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -13,6 +12,7 @@ from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNet
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
+from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -37,7 +37,7 @@ class Model:
             block=SCSERefineNetBlock
         )
 
-        self.optimizer = Adam(self.net.parameters(), lr=1e-4, weight_decay=1e-4)
+        self.optimizer = NDAdam(self.net.parameters(), lr=1e-4, weight_decay=1e-4)
 
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
