@@ -71,3 +71,25 @@ class Pad(TTA):
         b, c, h, w = x.size()
 
         return x[:, :, pad[2]:h-pad[3], pad[0]:w-pad[1]]
+
+
+class Translate(TTA):
+    def __init__(self, y=0):
+        self.y = y
+
+    def transform_forward(self, x):
+        if self.y >= 0:
+            top = self.y
+            bottom = 0
+        else:
+            top = 0
+            bottom = self.y
+
+        x = x[:, :, top:x.size(2) + bottom, :]
+        x = F.pad(x, (0, 0, top, -bottom), mode='reflect')
+
+        return x
+
+    def transform_backward(self, x):
+
+        return x

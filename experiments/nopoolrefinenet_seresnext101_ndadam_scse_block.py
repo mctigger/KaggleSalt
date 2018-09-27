@@ -3,16 +3,16 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, OldRefineNetBlock
-from nets.backbones import NoPoolDPN107Base
-from nets.encoders.dpn import dpn107
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.backbones import NoPoolResNextBase
+from nets.encoders.senet import se_resnext101_32x4d
 from metrics import iou, mAP
+from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -29,11 +29,10 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(
-            NoPoolDPN107Base(dpn107()),
+            NoPoolResNextBase(se_resnext101_32x4d()),
             num_features=128,
-            block_multiplier=1,
-            num_features_base=[376, 1152, 2432, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
+            block=SCSERefineNetBlock
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -86,7 +85,7 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
@@ -130,9 +129,8 @@ class Model:
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
-                translation=lambda rs: (rs.randint(-30, 30), rs.randint(-30, 30)),
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
-                rotation=lambda rs: rs.randint(-10, 10),
                 **utils.transformations_options
             ),
             transformations.Padding(((13, 14), (13, 14), (0, 0)))
@@ -142,7 +140,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=10,
+            batch_size=16,
             shuffle=True
         )
 
@@ -178,7 +176,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=20
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -213,7 +211,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=20
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
@@ -252,6 +250,8 @@ def main():
         test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
+
+        break
 
     experiment_logger.save()
 

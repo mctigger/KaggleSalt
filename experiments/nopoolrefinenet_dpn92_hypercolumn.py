@@ -9,7 +9,8 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet_hypercolumn import RefineNet, RefineNetUpsampleClassifier
+from nets.refinenet_hypercolumn import HypercolumnCatRefineNet
+from nets.refinenet import OldRefineNetBlock, RefineNetUpsampleClassifier
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
@@ -28,12 +29,13 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
+        self.net = HypercolumnCatRefineNet(
             NoPoolDPN92Base(dpn92()),
             num_features=128,
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+            classifier=lambda c: RefineNetUpsampleClassifier(640, scale_factor=2),
+            block=OldRefineNetBlock
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -212,7 +214,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=16
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

@@ -141,7 +141,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=16,
+            batch_size=8,
             shuffle=True
         )
 
