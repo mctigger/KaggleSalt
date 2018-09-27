@@ -177,7 +177,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=16
         )
 
         average_meter_val = meters.AverageMeter()
@@ -212,7 +212,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=16
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
