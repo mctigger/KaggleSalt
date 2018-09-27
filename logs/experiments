@@ -1,4 +1,6 @@
 experiment train_iou train_loss train_mAP val_iou val_mAP
+nopoolrefinenet_dpn92_hypercolumn 0.9458 0.4341 0.9335 0.8887 0.8665
+nopoolrefinenet_dpn107_augmentation 0.9232 0.6382 0.8996 0.8858 0.8632
 nopoolrefinenet_dpn98 0.9362 0.5282 0.9198 0.8852 0.8628
 nopoolrefinenet_dpn92 0.9401 0.4692 0.9258 0.8841 0.8624
 nopoollkm_dpn92_pyramid_concat 0.9407 0.4843 0.9267 0.8829 0.8611
