@@ -126,7 +126,7 @@ class Model:
     def train(self, net, samples, optimizer, e):
         alpha = 2 * max(0, ((100 - e) / 100))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
-        criterion_cls = BCEWithLogitsLoss()
+        criterion_cls = BCEWithLogitsLoss(pos_weight=0.2)
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
@@ -158,7 +158,7 @@ class Model:
 
                 t_cls = F.adaptive_max_pool2d(masks_targets, 1).view(masks_targets.size(0), -1)
 
-                loss = (criterion(masks_predictions, masks_targets) + 0.4 * criterion_cls(p_cls, t_cls)) / 1.4
+                loss = (criterion(masks_predictions, masks_targets) + criterion_cls(p_cls, t_cls))
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
