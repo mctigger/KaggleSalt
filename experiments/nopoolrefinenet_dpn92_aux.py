@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet_aux import RefineNet, RefineNetUpsampleClassifier
+from nets.refinenet_aux import AuxRefineNet, RefineNetUpsampleClassifier
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
