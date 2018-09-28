@@ -41,7 +41,7 @@ class AuxRefineNet(RefineNet):
         x = self.refine_3([x_0, x])
 
         cls = self.classifier_binary(F.adaptive_max_pool2d(x_3, output_size=1).view(x.size(0), -1))
-        cls_expanded = torch.sigmoid(cls).unsqueeze(2).unsqueeze(2).expand_as(x)
+        cls_expanded = torch.sigmoid(cls).unsqueeze(2).unsqueeze(2).expand(x.size()[0], 1, x.size()[2], x.size()[3])
         x = self.classifier(torch.cat([x, cls_expanded], dim=1))
 
         return x, cls
