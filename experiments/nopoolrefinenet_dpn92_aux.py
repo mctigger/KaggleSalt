@@ -125,8 +125,8 @@ class Model:
 
     def train(self, net, samples, optimizer, e):
         alpha = 2 * max(0, ((100 - e) / 100))
-        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
-        criterion_cls = BCEWithLogitsLoss(pos_weight=torch.FloatTensor([0.2]))
+        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha).cuda()
+        criterion_cls = BCEWithLogitsLoss(pos_weight=torch.FloatTensor([0.2])).cuda()
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
