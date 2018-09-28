@@ -30,6 +30,7 @@ class AuxRefineNet(RefineNet):
             block
         )
 
+        self.classifier = classifier(num_features[3] + 1)
         self.classifier_binary = nn.Linear(num_features_base[3], 1)
 
     def forward(self, x):
