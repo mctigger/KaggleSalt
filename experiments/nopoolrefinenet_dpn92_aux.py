@@ -34,7 +34,7 @@ class Model:
             num_features=128,
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+            classifier=lambda c: RefineNetUpsampleClassifier(c + 1, scale_factor=2, align_corners=True)
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
