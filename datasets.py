@@ -211,3 +211,21 @@ class RandomSubsetDataset(Dataset):
         real_index = np.random.randint(0, len(self.dataset))
 
         return self.dataset[real_index]
+
+
+class DataAnalysisDataset(Dataset):
+    def __init__(self, samples, path):
+        super(DataAnalysisDataset, self).__init__()
+
+        self.samples = samples
+        self.path = path
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        id = self.samples[index]
+        image = img_as_float(imread(join(self.path, 'images', id) + '.png'))
+        mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
+
+        return image, mask, id
