@@ -229,3 +229,21 @@ class DataAnalysisDataset(Dataset):
         mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
 
         return image, mask, id
+
+
+class TestDataAnalysisDataset(Dataset):
+    def __init__(self, samples, path):
+        super(TestDataAnalysisDataset, self).__init__()
+
+        self.samples = samples
+        self.path = path
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        id = self.samples[index]
+        image = img_as_float(imread(join(self.path, 'images', id) + '.png'))
+
+        return image, id
+

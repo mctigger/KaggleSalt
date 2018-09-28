@@ -5,6 +5,7 @@ import torch
 from torch.nn import DataParallel, functional as F
 from torch.optim import Adam
 from torch.utils.data import DataLoader
+from torch.nn import BCEWithLogitsLoss
 from tqdm import tqdm
 
 from ela import transformations, generator, random
@@ -125,6 +126,7 @@ class Model:
     def train(self, net, samples, optimizer, e):
         alpha = 2 * max(0, ((100 - e) / 100))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
+        criterion_cls = BCEWithLogitsLoss()
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
@@ -152,11 +154,11 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions, aux = net(images)
+                masks_predictions, p_cls = net(images)
 
-                aux_target = (F.interpolate(masks_targets, scale_factor=1/4, mode='bilinear', align_corners=True) + F.avg_pool2d(masks_targets, 4)) / 2
+                t_cls = F.adaptive_max_pool2d(masks_targets, 1).view(masks_targets.size(0), -1)
 
-                loss = (criterion(masks_predictions, masks_targets) + 0.4 * criterion(aux, aux_target)) / 1.4
+                loss = (criterion(masks_predictions, masks_targets) + 0.4 * criterion_cls(p_cls, t_cls)) / 1.4
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
