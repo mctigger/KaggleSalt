@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 from torch.nn import functional as F
 
@@ -39,7 +40,8 @@ class AuxRefineNet(RefineNet):
         x = self.refine_2([x_1, x])
         x = self.refine_3([x_0, x])
 
-        x = self.classifier(x)
         cls = self.classifier_binary(F.adaptive_max_pool2d(x_3, output_size=1).view(x.size(0), -1))
+        cls_expanded = torch.sigmoid(cls).unsqueeze(2).unsqueeze(2).expand_as(x)
+        x = self.classifier(torch.cat([x, cls_expanded], dim=1))
 
         return x, cls
