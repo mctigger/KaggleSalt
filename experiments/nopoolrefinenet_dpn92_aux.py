@@ -29,7 +29,7 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
+        self.net = AuxRefineNet(
             NoPoolDPN92Base(dpn92()),
             num_features=128,
             block_multiplier=1,
