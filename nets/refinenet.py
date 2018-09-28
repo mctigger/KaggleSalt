@@ -526,6 +526,34 @@ class ModifiedRefineNetUpsampleClassifier(nn.Module):
         return self.classifier(x)
 
 
+class OldRefineNetBlock(nn.Module):
+    def __init__(self, channels, config, crp=CRP, rcu=RCU, mrf=MrF):
+        super(OldRefineNetBlock, self).__init__()
+        paths = []
+        for in_channels, scale_factor in config:
+            p = nn.Sequential(*[
+                nn.Conv2d(in_channels, channels*rcu.multiplier, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.Dropout2d(0),
+                rcu(channels*rcu.multiplier, channels),
+                rcu(channels*rcu.multiplier, channels)
+            ])
+            paths.append(p)
+
+        self.paths = nn.ModuleList(paths)
+
+        self.mrf = mrf(channels*rcu.multiplier, [scale_factor for in_channels, scale_factor in config])
+        self.crp = crp(channels*rcu.multiplier)
+        self.out = rcu(channels*rcu.multiplier, channels)
+
+    def forward(self, inputs):
+        paths = [path(inp) for inp, path in zip(inputs, self.paths)]
+        x = self.mrf(paths)
+        x = self.crp(x)
+        x = self.out(x)
+
+        return x
+
+
 class RefineNetBlock(nn.Module):
     def __init__(self, channels, config, crp=CRP, rcu=RCU, mrf=MrF):
         super(RefineNetBlock, self).__init__()
@@ -657,6 +685,55 @@ class RefineNet(nn.Module):
         self.refine_1 = block(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp[1], rcu, mrf)
         self.refine_2 = block(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp[2], rcu, mrf)
         self.refine_3 = block(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 2)], crp[3], rcu, mrf)
+
+        self.classifier = classifier(num_features[3])
+
+        self.encoder = encoder
+
+    def forward(self, x):
+        x_0, x_1, x_2, x_3 = self.encoder(x)
+
+        x = self.refine_0([x_3])
+        x = self.refine_1([x_2, x])
+        x = self.refine_2([x_1, x])
+        x = self.refine_3([x_0, x])
+
+        x = self.classifier(x)
+
+        return x
+
+
+class HighResRefineNet(nn.Module):
+    def __init__(
+            self,
+            encoder,
+            num_features=None,
+            num_features_base=None,
+            block_multiplier=4,
+            crp=CRP,
+            rcu=RCU,
+            mrf=MrF,
+            classifier=RefineNetUpsampleClassifier,
+            block=RefineNetBlock
+    ):
+        super(HighResRefineNet, self).__init__()
+
+        if num_features is None:
+            num_features = [256*2, 256, 256, 256]
+
+        if not isinstance(num_features, list):
+            num_features = [num_features*2, num_features, num_features, num_features]
+
+        if num_features_base is None:
+            num_features_base = [64, 128, 256, 512]
+
+        if not isinstance(crp, list):
+            crp = [crp, crp, crp, crp]
+
+        self.refine_0 = block(num_features[0], [(block_multiplier*num_features_base[3], 1)], crp[0], rcu, mrf)
+        self.refine_1 = block(num_features[1], [(block_multiplier*num_features_base[2], 1), (num_features[0]*rcu.multiplier, 2)], crp[1], rcu, mrf)
+        self.refine_2 = block(num_features[2], [(block_multiplier*num_features_base[1], 1), (num_features[1]*rcu.multiplier, 2)], crp[2], rcu, mrf)
+        self.refine_3 = block(num_features[3], [(block_multiplier*num_features_base[0], 1), (num_features[2]*rcu.multiplier, 1)], crp[3], rcu, mrf)
 
         self.classifier = classifier(num_features[3])
 

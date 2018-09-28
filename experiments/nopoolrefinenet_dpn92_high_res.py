@@ -9,9 +9,9 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, OldRefineNetBlock
-from nets.backbones import NoPoolDPN107Base
-from nets.encoders.dpn import dpn107
+from nets.refinenet import HighResRefineNet, RefineNetUpsampleClassifier
+from nets.backbones import NoPoolDPN92Base
+from nets.encoders.high_res_dpn import dpn92
 from metrics import iou, mAP
 import datasets
 import utils
@@ -28,11 +28,11 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            NoPoolDPN107Base(dpn107()),
+        self.net = HighResRefineNet(
+            NoPoolDPN92Base(dpn92()),
             num_features=128,
             block_multiplier=1,
-            num_features_base=[376, 1152, 2432, 2048 + 640],
+            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
         )
         self.tta = [
@@ -130,9 +130,8 @@ class Model:
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
-                translation=lambda rs: (rs.randint(-30, 30), rs.randint(-30, 30)),
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
-                rotation=lambda rs: rs.randint(-10, 10),
                 **utils.transformations_options
             ),
             transformations.Padding(((13, 14), (13, 14), (0, 0)))
@@ -142,7 +141,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=10,
+            batch_size=8,
             shuffle=True
         )
 
@@ -178,7 +177,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=20
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -213,7 +212,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=20
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
