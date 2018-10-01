@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERCU
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
@@ -34,38 +34,16 @@ class Model:
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
-            block=SCSERefineNetBlock
+            rcu=SCSERCU
         )
-
-        self.optimizer = NDAdam(self.net.parameters(), lr=1e-4, weight_decay=1e-4)
-
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
-        self.batch_size = 16
-
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
         torch.save(self.net.state_dict(), os.path.join(self.path, 'model'))
-
-    def save_checkpoint(self, net, optimizer, epoch, logger, best_val_mAP):
-        pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
-        torch.save({
-            'net': net.state_dict(),
-            'optimizer': optimizer.state_dict(),
-            'epoch': epoch,
-            'logger': logger,
-            'best_val_mAP': best_val_mAP
-        }, os.path.join(self.path, 'checkpoint'))
-
-    def load_checkpoint(self, net, optimizer):
-        checkpoint = torch.load(os.path.join(self.path, 'checkpoint'))
-        net.load_state_dict(checkpoint['net'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-
-        return checkpoint['epoch'], checkpoint['logger']['epoch'], checkpoint['best_val_mAP']
 
     def load(self):
         state_dict = torch.load(os.path.join(self.path, 'model'))
@@ -107,7 +85,16 @@ class Model:
         return masks_predictions
 
     def fit(self, samples_train, samples_val):
-        epoch_start, epoch_end = 0, 100
+        net = DataParallel(self.net)
+
+        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        lr_scheduler = utils.CyclicLR(optimizer, 5, {
+            0: (1e-4, 1e-6),
+            100: (0.5e-4, 1e-6),
+            160: (1e-5, 1e-6),
+        })
+
+        epochs = 200
 
         best_val_mAP = 0
         best_stats = None
@@ -115,21 +102,8 @@ class Model:
         # Logs stats for each epoch and saves them as .csv at the end
         epoch_logger = utils.EpochLogger(self.name + '-split_{}'.format(self.split))
 
-        net = DataParallel(self.net).cuda()
-        optimizer = self.optimizer
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (0.5e-4, 1e-6),
-            50: (1e-5, 1e-6),
-        })
-
-        if os.path.exists(os.path.join(self.path, 'checkpoint')):
-            epoch_start, epoch_logger, best_val_mAP = self.load_checkpoint(net, optimizer)
-            print('Loading from checkpoint. Continuing from epoch {}...'.format(epoch_start))
-
-            print(epoch_logger)
-
         # Training
-        for e in range(epoch_start, epoch_end):
+        for e in range(epochs):
             lr_scheduler.step(e)
 
             stats_train = self.train(net, samples_train, optimizer, e)
@@ -143,8 +117,6 @@ class Model:
                 best_val_mAP = current_mAP
                 best_stats = stats
                 self.save()
-
-            self.save_checkpoint(net, optimizer, e, {'epoch': epoch_logger}, best_val_mAP)
 
         # Post training
         epoch_logger.save()
@@ -170,7 +142,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=self.batch_size,
+            batch_size=16,
             shuffle=True
         )
 
@@ -206,7 +178,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=self.batch_size*2
+            batch_size=32
         )
 
         average_meter_val = meters.AverageMeter()
@@ -241,7 +213,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=self.batch_size*2
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

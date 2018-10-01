@@ -63,9 +63,7 @@ def test_k_fold():
         yield samples[val_index]
 
 
-
-def mask_stratified_k_fold():
-    n_splits = 5
+def mask_stratified_k_fold(n_splits=5):
     sorted_samples = np.array(get_train_samples_sorted())
 
     for i in range(n_splits):

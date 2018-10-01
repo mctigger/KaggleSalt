@@ -17,18 +17,16 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_dpn92'
+    'nopoolrefinenet_dpn92_pseudo_labels_subset'
 ]
 
-ensemble_name = 'nopoolrefinenet_dpn92 split-0+1+2+4'
+ensemble_name = 'nopoolrefinenet_dpn92_pseudo_labels_subset'
 
 test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
     for i in range(0, 5):
-        if i == 3:
-            continue
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)

@@ -36,4 +36,4 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
     experiment_logger.set_split(i, stats)
 
 experiment_logger.print()
-#experiment_logger.save()
+experiment_logger.save()

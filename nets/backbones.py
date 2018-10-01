@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from nets.encoders.dpn import CatBnAct
+from nets.modules import SCSEModule
 
 
 class DPN92Base(nn.Module):
@@ -340,6 +341,26 @@ class NoPoolResNextBase(nn.Module):
         x_2 = self.layer2(x_1)
         x_3 = self.layer3(x_2)
         x_4 = self.layer4(x_3)
+
+        return x_1, x_2, x_3, x_4
+
+
+class SCSENoPoolResNextBase(NoPoolResNextBase):
+    def __init__(self, resnext):
+        super(SCSENoPoolResNextBase, self).__init__(resnext)
+        
+        self.scse0 = SCSEModule(64)
+        self.scse1 = SCSEModule(256)
+        self.scse2 = SCSEModule(512)
+        self.scse3 = SCSEModule(1024)
+        self.scse4 = SCSEModule(2048)
+
+    def forward(self, x):
+        x_0 = self.scse0(self.layer0(x))
+        x_1 = self.scse1(self.layer1(x_0))
+        x_2 = self.scse2(self.layer2(x_1))
+        x_3 = self.scse3(self.layer3(x_2))
+        x_4 = self.scse4(self.layer4(x_3))
 
         return x_1, x_2, x_3, x_4
 
