@@ -10,7 +10,7 @@ from ela import transformations, generator, random
 
 from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.backbones import NoPoolResNextBase
-from nets.encoders.senet import se_resnext101_32x4d
+from nets.encoders.senet import se_resnext50_32x4d
 from metrics import iou, mAP
 from optim import NDAdam
 import datasets
@@ -29,7 +29,7 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(
-            NoPoolResNextBase(se_resnext101_32x4d()),
+            NoPoolResNextBase(se_resnext50_32x4d()),
             num_features=128,
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
             block=SCSERefineNetBlock
