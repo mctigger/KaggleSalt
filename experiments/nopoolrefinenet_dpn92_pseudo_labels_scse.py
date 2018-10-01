@@ -2,18 +2,17 @@ import os
 import pathlib
 
 import torch
-from torch.nn import DataParallel, functional as F
-from torch.optim import Adam
-from torch.utils.data import DataLoader
-from torch.nn import BCEWithLogitsLoss
+from torch.nn import DataParallel
+from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet_aux import AuxRefineNet, RefineNetUpsampleClassifier
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERCU
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
+from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -23,23 +22,28 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
+samples_test = utils.get_test_samples()
+
 
 class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = AuxRefineNet(
+        self.net = RefineNet(
             NoPoolDPN92Base(dpn92()),
             num_features=128,
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c + 1, scale_factor=2, align_corners=True)
+            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
+            rcu=SCSERCU
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
+
+        self.test_predictions = utils.TestPredictions('ensemble-{}'.format(split)).load()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -61,23 +65,10 @@ class Model:
 
         pbar.update()
 
-    def update_pbar_val(self, masks_predictions, masks_predictions_aux, masks_targets, pbar, average_meter, pbar_description):
-        average_meter.add('iou', iou(masks_predictions > 0.5, masks_targets.byte()))
-        average_meter.add('mAP', mAP(masks_predictions > 0.5, masks_targets.byte()))
-        average_meter.add('mAP_aux', mAP(masks_predictions_aux > 0.5, masks_targets.byte()))
-
-        pbar.set_description(
-            pbar_description + ''.join(
-                [' {}:{:6.4f}'.format(k, v) for k, v in average_meter.get_all().items()]
-            )
-        )
-
-        pbar.update()
-
     def predict_raw(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions, _ = net(tta.transform_forward(images))
+            masks_predictions = net(tta.transform_forward(images))
             masks_predictions = tta.transform_backward(masks_predictions)
             tta_masks.append(masks_predictions)
 
@@ -88,22 +79,7 @@ class Model:
     def predict(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions, _ = net(tta.transform_forward(images))
-            masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
-            tta_masks.append(masks_predictions)
-
-        tta_masks = torch.stack(tta_masks, dim=0)
-        masks_predictions = torch.mean(tta_masks, dim=0)
-
-        return masks_predictions
-
-
-    def predict_aux(self, net, images):
-        tta_masks = []
-        for tta in self.tta:
-            masks_predictions, cls = net(tta.transform_forward(images))
-            size = masks_predictions.size()
-            masks_predictions = masks_predictions * torch.round(torch.sigmoid(cls).unsqueeze(2).unsqueeze(2).expand(size[0], 1, size[2], size[3]))
+            masks_predictions = net(tta.transform_forward(images))
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
@@ -115,7 +91,7 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
@@ -153,8 +129,7 @@ class Model:
 
     def train(self, net, samples, optimizer, e):
         alpha = 2 * max(0, ((100 - e) / 100))
-        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha).cuda()
-        criterion_cls = BCEWithLogitsLoss(pos_weight=torch.FloatTensor([0.5])).cuda()
+        criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
@@ -167,12 +142,22 @@ class Model:
             transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
+        pseudo_dataset = datasets.SemiSupervisedImageDataset(
+            samples_test,
+            './data/test',
+            transforms,
+            size=len(samples_test),
+            test_predictions=self.test_predictions,
+            momentum=0.0
+        )
+
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        weights = [len(pseudo_dataset) / len(dataset) * 2] * len(dataset) + [1] * len(pseudo_dataset)
         dataloader = DataLoader(
-            dataset,
+            ConcatDataset([dataset, pseudo_dataset]),
             num_workers=10,
             batch_size=16,
-            shuffle=True
+            sampler=WeightedRandomSampler(weights=weights, num_samples=3200)
         )
 
         average_meter_train = meters.AverageMeter()
@@ -182,11 +167,9 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions, p_cls = net(images)
+                masks_predictions = net(images)
 
-                t_cls = F.adaptive_max_pool2d(masks_targets, 1).view(masks_targets.size(0), -1)
-
-                loss = (criterion(masks_predictions, masks_targets) + 0.5*criterion_cls(p_cls, t_cls)) / 1.5
+                loss = criterion(masks_predictions, masks_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -220,11 +203,9 @@ class Model:
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
                 masks_predictions = self.predict(net, images)
-                masks_predictions_aux = self.predict_aux(net, images)
 
-                self.update_pbar_val(
+                self.update_pbar(
                     masks_predictions,
-                    masks_predictions_aux,
                     masks_targets,
                     pbar,
                     average_meter_val,
@@ -271,6 +252,7 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+        print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

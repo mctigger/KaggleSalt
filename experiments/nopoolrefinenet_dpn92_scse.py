@@ -3,16 +3,16 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERCU
 from nets.backbones import NoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
+from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -34,7 +34,7 @@ class Model:
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
-            block=SCSERefineNetBlock
+            rcu=SCSERCU
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -87,7 +87,7 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),

@@ -17,10 +17,10 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_dpn92_ndadam_hypercolumn_cat'
+    'nopoolrefinenet_dpn92_pseudo_labels_subset'
 ]
 
-ensemble_name = 'nopoolrefinenet_dpn92_ndadam_hypercolumn_cat'
+ensemble_name = 'nopoolrefinenet_dpn92_pseudo_labels_subset'
 
 test_predictions_experiment = []
 
