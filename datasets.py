@@ -95,12 +95,7 @@ class AnalysisDataset(Dataset):
         self.predictions = predictions
         self.transforms = transforms
 
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, index):
-        id = self.samples[index]
-
+    def get_by_id(self, id):
         image = self.predictions[id]
 
         t = next(self.transforms)
@@ -111,6 +106,14 @@ class AnalysisDataset(Dataset):
         mask = t(mask)
 
         return image, mask, id
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, index):
+        id = self.samples[index]
+
+        return self.get_by_id(id)
 
 
 class ImageDatasetRemoveSmall(Dataset):

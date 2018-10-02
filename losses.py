@@ -86,11 +86,13 @@ class SmoothLovaszWithLogitsLoss(nn.Module):
 
 
 class ELULovaszWithLogitsLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, size_average=True):
         super(ELULovaszWithLogitsLoss, self).__init__()
 
+        self.size_average = size_average
+
     def forward(self, prediction, target):
-        return loss_lovasz.lovasz_hinge_elu(prediction, target, per_image=True)
+        return loss_lovasz.lovasz_hinge_elu(prediction, target, per_image=self.size_average)
 
 
 class LovaszBCEWithLogitsLoss(nn.Module):
@@ -131,13 +133,13 @@ class ELULovaszBCEWithLogitsLoss(nn.Module):
 
 
 class ELULovaszFocalWithLogitsLoss(nn.Module):
-    def __init__(self, weight_focal=1, weight_lovasz=1):
+    def __init__(self, weight_focal=1, weight_lovasz=1, size_average=True):
         super(ELULovaszFocalWithLogitsLoss, self).__init__()
         self.weight_focal = weight_focal
         self.weight_lovasz = weight_lovasz
 
-        self.focal = FocalLoss2d()
-        self.lovasz = ELULovaszWithLogitsLoss()
+        self.focal = FocalLoss2d(size_average)
+        self.lovasz = ELULovaszWithLogitsLoss(size_average)
 
     def forward(self, prediction, target):
         return self.focal(prediction, target) * self.weight_focal + self.lovasz(prediction, target) * self.weight_lovasz

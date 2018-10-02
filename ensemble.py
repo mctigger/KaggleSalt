@@ -17,10 +17,11 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_dpn92_pseudo_labels_subset'
+    'nopoolrefinenet_seresnext101_ndadam_scse_block_pseudo_labels',
+    'nopoolrefinenet_dpn92_pseudo_labels_no_leak'
 ]
 
-ensemble_name = 'nopoolrefinenet_dpn92_pseudo_labels_subset'
+ensemble_name = 'ensemble'
 
 test_predictions_experiment = []
 
