@@ -12,7 +12,7 @@ args = parser.parse_args()
 name = args.name
 
 test_predictions = utils.TestPredictions(name, mode='val')
-for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
     # Get the model architecture
     Model = locate('experiments.' + name + '.Model')
     model = Model(name, i)
@@ -22,6 +22,5 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
 
     # Predict the test data
     test_predictions.add_predictions(model.test(samples_val, dir_test='./data/train', predict=model.predict_raw))
-    break
 
 test_predictions.save()

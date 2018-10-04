@@ -131,6 +131,33 @@ class NoPoolDPN92Base(nn.Module):
         return x1, x2, x3, x4
 
 
+class SCSENoPoolDPN92Base(NoPoolDPN92Base):
+    def __init__(self, dpn):
+        super(SCSENoPoolDPN92Base, self).__init__(dpn)
+
+        self.scse1a, self.scse1b = (SCSEModule(256), SCSEModule(80))
+        self.scse2a, self.scse2b = (SCSEModule(512), SCSEModule(192))
+        self.scse3a, self.scse3b = (SCSEModule(1024), SCSEModule(528))
+        self.scse4a, self.scse4b = (SCSEModule(2048), SCSEModule(640))
+
+    def forward(self, x):
+        x = self.layer0(x)
+        x = self.layer1(x)
+        x = self.scse1a(x[0]), self.scse1b(x[1])
+        x1 = self.out1(x)
+        x = self.layer2(x)
+        x = self.scse2a(x[0]), self.scse2b(x[1])
+        x2 = self.out2(x)
+        x = self.layer3(x)
+        x = self.scse3a(x[0]), self.scse3b(x[1])
+        x3 = self.out3(x)
+        x = self.layer4(x)
+        x = self.scse4a(x[0]), self.scse4b(x[1])
+        x4 = self.out4(x)
+
+        return x1, x2, x3, x4
+
+
 class NoPoolDPN98Base(nn.Module):
     def __init__(self, dpn):
         super(NoPoolDPN98Base, self).__init__()
@@ -264,7 +291,6 @@ class NoPoolResNetBase(nn.Module):
         x_4 = self.layer4(x_3)
 
         return x_1, x_2, x_3, x_4
-
 
 
 

@@ -17,8 +17,7 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_seresnext101_ndadam_scse_block_pseudo_labels',
-    'nopoolrefinenet_dpn92_pseudo_labels_no_leak'
+    'nopoolrefinenet_seresnext50_ndadam_scse_block_padding'
 ]
 
 ensemble_name = 'ensemble'
@@ -27,7 +26,7 @@ test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
-    for i in range(0, 5):
+    for i in range(0, 7):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)

@@ -26,7 +26,7 @@ def sigmoid(x):
 
 
 experiments = [
-    'nopoolrefinenet_seresnext50_ndadam_scse_block_resize',
+    'nopoolrefinenet_seresnext50_ndadam_scse_block_padding',
 ]
 
 test_predictions_experiment = []
@@ -42,7 +42,7 @@ transforms = generator.TransformationsGenerator([])
 dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
 split_map = []
-for train, val in utils.mask_stratified_k_fold():
+for train, val in utils.mask_stratified_k_fold(7):
     predictions = []
     masks = []
     with tqdm(total=len(val), leave=False) as pbar:
@@ -55,17 +55,20 @@ for train, val in utils.mask_stratified_k_fold():
             predictions.append(prediction)
             masks.append(mask)
 
-    predictions = torch.stack(predictions, dim=0)
-    masks = torch.stack(masks, dim=0)
-
-    print(predictions.size(), masks.size())
+    predictions = torch.stack(predictions, dim=0).cuda()
+    masks = torch.stack(masks, dim=0).cuda()
 
     predictions = torch.sigmoid(predictions)
-    predictions = (torch.mean(predictions, dim=1) > 0.5).float()
+    predictions = torch.mean(predictions, dim=1)
+
+    # Post processing
+    predictions_sum, _ = torch.median(predictions.view(predictions.size(0), -1), dim=1)
+    predictions_mask = torch.abs(predictions_sum - 0.5) < 0.01
+    predictions[predictions_mask] = 0
+
+    predictions = (predictions > 0.5).float()
 
     map = metrics.mAP(predictions, masks)
     split_map.append(map)
-
-    break
 
 print(np.mean(split_map), split_map)
