@@ -27,6 +27,7 @@ def sigmoid(x):
 
 experiments = [
     'nopoolrefinenet_seresnext50_ndadam_scse_block_padding',
+    'nopoolrefinenet_seresnext50_ndadam_scse_block_resize',
 ]
 
 test_predictions_experiment = []
@@ -60,12 +61,6 @@ for train, val in utils.mask_stratified_k_fold(7):
 
     predictions = torch.sigmoid(predictions)
     predictions = torch.mean(predictions, dim=1)
-
-    # Post processing
-    predictions_sum, _ = torch.median(predictions.view(predictions.size(0), -1), dim=1)
-    predictions_mask = torch.abs(predictions_sum - 0.5) < 0.01
-    predictions[predictions_mask] = 0
-
     predictions = (predictions > 0.5).float()
 
     map = metrics.mAP(predictions, masks)
