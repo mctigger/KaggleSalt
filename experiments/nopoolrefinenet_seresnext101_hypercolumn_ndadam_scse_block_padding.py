@@ -84,7 +84,7 @@ class Model:
         return masks_predictions
 
     def fit(self, samples_train, samples_val):
-        net = DataParallel(self.net)
+        net = DataParallel(self.net).cuda()
 
         optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
