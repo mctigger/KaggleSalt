@@ -26,7 +26,7 @@ def sigmoid(x):
 
 
 experiments = [
-    'nopoolrefinenet_dpn98'
+    'nopoolrefinenet_seresnext50_ndadam_scse_block_resize',
 ]
 
 test_predictions_experiment = []
@@ -48,21 +48,24 @@ for train, val in utils.mask_stratified_k_fold():
     with tqdm(total=len(val), leave=False) as pbar:
         for id in val:
             _, mask, _ = dataset.get_by_id(id)
-            test_prediction = np.stack([predictions[id] for predictions in test_predictions_experiment], axis=0)
+            test_prediction = np.concatenate([predictions[id] for predictions in test_predictions_experiment], axis=0)
             prediction = torch.FloatTensor(test_prediction)
             mask = torch.FloatTensor(mask)
 
             predictions.append(prediction)
             masks.append(mask)
 
-
-    prediction = torch.cat(predictions, dim=0)
+    predictions = torch.stack(predictions, dim=0)
     masks = torch.stack(masks, dim=0)
 
-    prediction = (torch.sigmoid(prediction) > 0.5).float()
-    prediction = torch.mean(prediction, dim=1)
+    print(predictions.size(), masks.size())
 
-    map = metrics.mAP(prediction, masks)
+    predictions = torch.sigmoid(predictions)
+    predictions = (torch.mean(predictions, dim=1) > 0.5).float()
+
+    map = metrics.mAP(predictions, masks)
     split_map.append(map)
+
+    break
 
 print(np.mean(split_map), split_map)

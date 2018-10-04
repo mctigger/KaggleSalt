@@ -122,7 +122,7 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
+        alpha = 2 * max(0, ((50 - e) / 50))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
@@ -235,7 +235,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
