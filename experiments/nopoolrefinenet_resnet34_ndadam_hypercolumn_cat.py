@@ -9,9 +9,9 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import ModifiedRefineNetUpsampleClassifier
+from nets.refinenet import ModifiedRefineNetUpsampleClassifier, OC, SCSERefineNetBlock, CRP
 from nets.refinenet_hypercolumn import HypercolumnCatRefineNet
-from nets.backbones import NoPoolResNetBase
+from nets.backbones import SCSENoPoolResNetBase
 from metrics import iou, mAP
 from optim import NDAdam
 import datasets
@@ -30,10 +30,12 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = HypercolumnCatRefineNet(
-            NoPoolResNetBase(resnet34(pretrained=True)),
-            num_features=128,
+            SCSENoPoolResNetBase(resnet34(pretrained=True)),
+            num_features=256,
             block_multiplier=1,
-            classifier=lambda c: ModifiedRefineNetUpsampleClassifier(640, channels=128, scale_factor=2)
+            classifier=lambda c: ModifiedRefineNetUpsampleClassifier(2*640, channels=128, scale_factor=2),
+            crp=[OC, OC, CRP, CRP],
+            block=SCSERefineNetBlock
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -90,10 +92,10 @@ class Model:
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
+            130: (1e-5, 1e-6),
         })
 
-        epochs = 200
+        epochs = 150
 
         best_val_mAP = 0
         best_stats = None
@@ -123,7 +125,7 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
+        alpha = 2 * max(0, ((30 - e) / 30))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
@@ -236,7 +238,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

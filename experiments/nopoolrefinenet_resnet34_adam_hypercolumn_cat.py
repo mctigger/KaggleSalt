@@ -3,15 +3,16 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam
 from torch.utils.data import DataLoader
+from torch.optim import Adam
+from torchvision.models.resnet import resnet34
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier
-from nets.backbones import NoPoolDPN92Base
-from nets.encoders.dpn import dpn92
+from nets.refinenet import ModifiedRefineNetUpsampleClassifier, OC, SCSERefineNetBlock, CRP
+from nets.refinenet_hypercolumn import HypercolumnCatRefineNet
+from nets.backbones import SCSENoPoolResNetBase
 from metrics import iou, mAP
 import datasets
 import utils
@@ -28,16 +29,17 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            NoPoolDPN92Base(dpn92()),
-            num_features=128,
+        self.net = HypercolumnCatRefineNet(
+            SCSENoPoolResNetBase(resnet34(pretrained=True)),
+            num_features=256,
             block_multiplier=1,
-            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+            classifier=lambda c: ModifiedRefineNetUpsampleClassifier(2*640, channels=128, scale_factor=2),
+            crp=[OC, OC, CRP, CRP],
+            block=SCSERefineNetBlock
         )
         self.tta = [
-            tta.Pipeline([tta.Resize(128, 101)]),
-            tta.Pipeline([tta.Resize(128, 101), tta.Flip()])
+            tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
+            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
     def save(self):
@@ -90,10 +92,10 @@ class Model:
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
+            130: (1e-5, 1e-6),
         })
 
-        epochs = 200
+        epochs = 150
 
         best_val_mAP = 0
         best_stats = None
@@ -123,7 +125,7 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((50 - e) / 50))
+        alpha = 2 * max(0, ((30 - e) / 30))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
@@ -134,7 +136,7 @@ class Model:
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
             ),
-            transformations.Resize((128, 128), **utils.transformations_options)
+            transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
@@ -237,10 +239,6 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
-        if i < 4:
-            continue
-
-        print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

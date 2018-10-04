@@ -6,6 +6,7 @@ nopoolrefinenet_dpn92_pseudo_labels_subset 0.9388 0.5296 0.9226 0.8908 0.8679
 nopoolrefinenet_dpn92_hypercolumn 0.9458 0.4341 0.9335 0.8887 0.8665
 nopoolrefinenet_dpn107_augmentation 0.9232 0.6382 0.8996 0.8858 0.8632
 nopoolrefinenet_dpn98 0.9362 0.5282 0.9198 0.8852 0.8628
+nopoolrefinenet_dpn92_padding 0.9387 0.4959 0.9237 0.8833 0.8626
 nopoolrefinenet_dpn92 0.9401 0.4692 0.9258 0.8841 0.8624
 nopoolrefinenet_dpn92_preact 0.9461 0.4521 0.9317 0.8843 0.8622
 nopoolrefinenet_dpn92_ndadam_hypercolumn_cat 0.9414 0.4853 0.9268 0.8846 0.8620

@@ -266,6 +266,24 @@ class NoPoolResNetBase(nn.Module):
         return x_1, x_2, x_3, x_4
 
 
+class SCSENoPoolResNetBase(NoPoolResNetBase):
+    def __init__(self, resnet):
+        super(SCSENoPoolResNetBase, self).__init__(resnet)
+
+        self.scse0 = SCSEModule(64)
+        self.scse1 = SCSEModule(64)
+        self.scse2 = SCSEModule(128)
+        self.scse3 = SCSEModule(256)
+        self.scse4 = SCSEModule(512)
+
+    def forward(self, x):
+        x_0 = self.scse0(self.layer0(x))
+        x_1 = self.scse1(self.layer1(x_0))
+        x_2 = self.scse2(self.layer2(x_1))
+        x_3 = self.scse3(self.layer3(x_2))
+        x_4 = self.scse4(self.layer4(x_3))
+
+        return x_1, x_2, x_3, x_4
 
 
 class NoPoolDenseNetBase(nn.Module):
