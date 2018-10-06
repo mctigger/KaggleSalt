@@ -139,6 +139,9 @@ class Model:
             )
         ])
 
+        samples_aux = list(set(samples).intersection(set(utils.get_aux_samples())))
+        dataset_aux = datasets.ImageDataset(samples_aux, './data/train', transforms)
+
         dataset_pseudo = datasets.SemiSupervisedImageDataset(
             samples_test,
             './data/test',
@@ -150,9 +153,10 @@ class Model:
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
         weight_train = len(dataset_pseudo) / len(dataset) * 2
-        weights = [weight_train] * len(dataset) + [1] * len(dataset_pseudo)
+        weight_aux = weight_train / 2
+        weights = [weight_train] * len(dataset) + [weight_aux] * len(dataset_aux) + [1] * len(dataset_pseudo)
         dataloader = DataLoader(
-            ConcatDataset([dataset, dataset_pseudo]),
+            ConcatDataset([dataset, dataset_aux, dataset_pseudo]),
             num_workers=10,
             batch_size=16,
             sampler=WeightedRandomSampler(weights=weights, num_samples=3200)
@@ -197,7 +201,7 @@ class Model:
 
         average_meter_val = meters.AverageMeter()
 
-        with tqdm(total=len(dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
+        with tqdm(total=len(dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, masks_targets in dataloader:
@@ -230,7 +234,7 @@ class Model:
             batch_size=32
         )
 
-        with tqdm(total=len(test_dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
+        with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, ids in test_dataloader:
