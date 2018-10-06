@@ -3,14 +3,15 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.optim import SGD
+from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier
-from nets.backbones import NoPoolDPN92Base
+from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
+from nets.refinenet import SCSERefineNetBlock, SmallDropoutRefineNetUpsampleClassifier
+from nets.backbones import SCSENoPoolDPN92Base
 from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
 import datasets
@@ -21,19 +22,20 @@ import tta
 
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
-n_splits= 5
+
 
 class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            NoPoolDPN92Base(dpn92()),
+        self.net = DualHypercolumnCatRefineNet(
+            SCSENoPoolDPN92Base(dpn92()),
             num_features=128,
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+            classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2*128, scale_factor=2),
+            block=SCSERefineNetBlock
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -86,14 +88,13 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
+        epochs = 120
+        optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
+        lr_scheduler = utils.PolyLR(optimizer, 40, 0.9, steps={
+            0: 1e-2,
+            40: 0.2 * 1e-2,
+            80: 0.2 * 0.2 * 1e-2,
         })
-
-        epochs = 200
 
         best_val_mAP = 0
         best_stats = None
@@ -123,27 +124,28 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
+        alpha = 2 * max(0, ((30 - e) / 30))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
-                translation=lambda rs: (rs.randint(-30, 30), rs.randint(-30, 30)),
+                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
-                rotation=lambda rs: rs.randint(-10, 10),
                 **utils.transformations_options
             ),
             transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
+        samples_aux = list(set(samples).intersection(set(utils.get_aux_samples())))
+        dataset_aux = datasets.ImageDataset(samples_aux, './data/train', transforms)
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
         dataloader = DataLoader(
-            dataset,
+            ConcatDataset([dataset, dataset_aux]),
             num_workers=10,
             batch_size=16,
-            shuffle=True
+            sampler=WeightedRandomSampler([1]*(len(dataset)+len(dataset_aux)), len(dataset))
         )
 
         average_meter_train = meters.AverageMeter()
@@ -178,7 +180,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=16
         )
 
         average_meter_val = meters.AverageMeter()
@@ -237,7 +239,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(n_splits)):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(5)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

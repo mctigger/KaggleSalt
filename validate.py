@@ -15,11 +15,6 @@ name = args.name
 
 experiment_logger = utils.ExperimentLogger(name, mode='val')
 
-tta = [
-    tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
-    tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
-]
-
 for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
     # Get the model architecture
     Model = locate('experiments.' + name + '.Model')
@@ -28,11 +23,10 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
     # Load the best performing checkpoint
     model.load()
 
-    # Set model tta
-    model.tta = tta
-
     # Validate
-    stats = model.validate(DataParallel(model.net).cuda(), samples_val, -1)
+    stats_train = model.validate(DataParallel(model.net).cuda(), samples_train, -1)
+    stats_val = model.validate(DataParallel(model.net).cuda(), samples_val, -1)
+    stats = {**stats_train, **stats_val}
     experiment_logger.set_split(i, stats)
 
 experiment_logger.print()

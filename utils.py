@@ -374,16 +374,22 @@ class CyclicLR2(_LRScheduler):
 
 
 class PolyLR(_LRScheduler):
-    def __init__(self, optimizer, max_epoch, power=0.9):
+    def __init__(self, optimizer, max_epoch, power=0.9, steps=None):
         self.max_epoch = max_epoch
         self.power = power
+        self.steps = steps
 
         super(PolyLR, self).__init__(optimizer)
 
     def get_lr(self):
         epoch = self.last_epoch
 
-        return [base_lr * (1 - epoch / self.max_epoch) ** self.power for base_lr in self.base_lrs]
+        base_lr = 0, 0
+        for e, b_lr in self.steps.items():
+            if e <= epoch:
+                base_lr = b_lr
+
+        return [base_lr * (1 - epoch / self.max_epoch) ** self.power for _ in self.base_lrs]
 
 
 transformations_options = {

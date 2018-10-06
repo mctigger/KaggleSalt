@@ -23,6 +23,7 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
+n_splits = 5
 
 class Model:
     def __init__(self, name, split):
@@ -238,7 +239,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(n_splits)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

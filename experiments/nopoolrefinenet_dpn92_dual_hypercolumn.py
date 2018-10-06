@@ -238,7 +238,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(5)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

@@ -249,4 +249,3 @@ class TestDataAnalysisDataset(Dataset):
         image = img_as_float(imread(join(self.path, 'images', id) + '.png'))
 
         return image, id
-

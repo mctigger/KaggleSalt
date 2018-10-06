@@ -4,7 +4,7 @@ import pathlib
 import torch
 from torch.nn import DataParallel
 from torch.optim import Adam
-from torch.utils.data import DataLoader, ConcatDataset
+from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from tqdm import tqdm
 
 from ela import transformations, generator, random
@@ -95,7 +95,7 @@ class Model:
             160: (1e-5, 1e-6),
         })
 
-        epochs = 200
+        epochs = 120
 
         best_val_mAP = 0
         best_stats = None
@@ -146,7 +146,7 @@ class Model:
             ConcatDataset([dataset, dataset_aux]),
             num_workers=10,
             batch_size=16,
-            shuffle=True
+            sampler=WeightedRandomSampler([1]*(len(dataset)+len(dataset_aux)), len(dataset))
         )
 
         average_meter_train = meters.AverageMeter()
@@ -240,7 +240,9 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(5)):
+        print('Running split {}...'.format(i))
+
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
