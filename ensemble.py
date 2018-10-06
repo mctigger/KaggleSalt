@@ -18,17 +18,6 @@ def ensemble_mean_mean(p):
     return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
 
-experiments = [
-    'nopoolrefinenet_dpn92_resize',
-    'nopoolrefinenet_dpn98',
-    'nopoolrefinenet_dpn92_padding',
-    'nopoolrefinenet_dpn92',
-    'nopoolrefinenet_dpn92_preact',
-    'nopoolrefinenet_dpn92_ndadam_hypercolumn_cat',
-    'nopoolrefinenet_dpn92_augmentation',
-    'nopoolrefinenet_dpn92_oc',
-]
-
 experiments = ['nopoolrefinenet_dpn92_dual_hypercolumn_small_poly_lr']
 
 ensemble_name = 'nopoolrefinenet_dpn92_dual_hypercolumn_small_poly_lr split-0'
