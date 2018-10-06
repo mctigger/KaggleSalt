@@ -3,15 +3,16 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
-from torch.optim import Adam
-from torch.utils.data import DataLoader
+from torch.optim import SGD
+from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import HighResRefineNet, RefineNetUpsampleClassifier
+from nets.refinenet import SmallDropoutRefineNetUpsampleClassifier
+from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
 from nets.backbones import NoPoolDPN92Base
-from nets.encoders.high_res_dpn import dpn92
+from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
 import datasets
 import utils
@@ -22,23 +23,27 @@ import tta
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
+samples_test = utils.get_test_samples()
+
 
 class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = HighResRefineNet(
+        self.net = DualHypercolumnCatRefineNet(
             NoPoolDPN92Base(dpn92()),
             num_features=128,
             block_multiplier=1,
             num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2)
+            classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
+
+        self.test_predictions = utils.TestPredictions('ensemble-{}'.format(split)).load()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -86,14 +91,14 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
-        })
-
         epochs = 200
+        optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
+        lr_scheduler = utils.PolyLR(optimizer, 40, 0.9, steps={
+            0: 1e-2,
+            50: 0.5 * 1e-2,
+            100: 0.5 * 0.5 * 1e-2,
+            150: 0.5 * 0.5 * 0.5 * 1e-2,
+        })
 
         best_val_mAP = 0
         best_stats = None
@@ -123,7 +128,7 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
+        alpha = 2 * max(0, ((50 - e) / 50))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
@@ -133,16 +138,30 @@ class Model:
                 translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
-            ),
-            transformations.Padding(((13, 14), (13, 14), (0, 0)))
+            )
         ])
 
+        samples_aux = list(set(samples).intersection(set(utils.get_aux_samples())))
+        dataset_aux = datasets.ImageDataset(samples_aux, './data/train', transforms)
+
+        dataset_pseudo = datasets.SemiSupervisedImageDataset(
+            samples_test,
+            './data/test',
+            transforms,
+            size=len(samples_test),
+            test_predictions=self.test_predictions,
+            momentum=0.0
+        )
+
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        weight_train = len(dataset_pseudo) / len(dataset) * 2
+        weight_aux = weight_train / 2
+        weights = [weight_train] * len(dataset) + [weight_aux] * len(dataset_aux) + [1] * len(dataset_pseudo)
         dataloader = DataLoader(
-            dataset,
+            ConcatDataset([dataset, dataset_aux, dataset_pseudo]),
             num_workers=10,
-            batch_size=8,
-            shuffle=True
+            batch_size=16,
+            sampler=WeightedRandomSampler(weights=weights, num_samples=3200)
         )
 
         average_meter_train = meters.AverageMeter()
@@ -150,9 +169,11 @@ class Model:
         with tqdm(total=len(dataloader), leave=False) as pbar, torch.enable_grad():
             net.train()
 
+            padding = tta.Pad((13, 14, 13, 14))
+
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = net(images)
+                masks_predictions = padding.transform_backward(net(padding.transform_forward(images))).contiguous()
 
                 loss = criterion(masks_predictions, masks_targets)
                 loss.backward()
@@ -237,6 +258,7 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+        print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
