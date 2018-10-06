@@ -392,12 +392,14 @@ class PolyLR(_LRScheduler):
     def get_lr(self):
         epoch = self.last_epoch
 
-        base_lr = 0, 0
+        base_lr = 0
+        epoch_step = 0
         for e, b_lr in self.steps.items():
             if e <= epoch:
                 base_lr = b_lr
+                epoch_step = e
 
-        return [base_lr * (1 - epoch / self.max_epoch) ** self.power for _ in self.base_lrs]
+        return [base_lr * (1 - (epoch - epoch_step) / self.max_epoch) ** self.power for _ in self.base_lrs]
 
 
 transformations_options = {
