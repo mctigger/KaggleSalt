@@ -55,9 +55,6 @@ def get_train_samples_sorted():
     return ids
 
 
-print(get_train_samples_sorted())
-
-
 def k_fold():
     rs = KFold(n_splits=5, shuffle=True, random_state=0)
     samples = get_train_samples()
