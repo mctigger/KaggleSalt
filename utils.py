@@ -42,7 +42,7 @@ def get_train_samples_sorted():
 
     masks_sum = []
 
-    for id in tqdm(get_train_samples(), desc='Sorting train samples'):
+    for id in tqdm(get_train_samples(), ascii=True, desc='Sorting train samples'):
         path = os.path.join('./data/train/masks', id + '.png')
         img = imread(path)
         masks_sum.append((id, np.sum(img)))
@@ -172,7 +172,7 @@ class TestPredictions:
 
     def load(self):
         predictions = np.load(os.path.join(self.dir, self.mode, self.name) + '.npz')
-        self.predictions = {id: predictions[id] for id in tqdm(predictions, leave=False, desc='Loading predictions for {}'.format(self.name))}
+        self.predictions = {id: predictions[id] for id in tqdm(predictions, leave=False, ascii=True, desc='Loading predictions for {}'.format(self.name))}
         return self.predictions
 
 
