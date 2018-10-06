@@ -3,6 +3,7 @@ import math
 import csv
 from multiprocessing import Pool
 
+import torch
 import numpy as np
 import pandas as pd
 import scipy.misc
@@ -34,6 +35,11 @@ def get_test_samples():
 
 
 def get_train_samples_sorted():
+    path_folds = './cv-5fold-splits.pth'
+    if os.path.exists(path_folds):
+        print("Loading existing cv-split!")
+        return torch.load(path_folds)
+
     masks_sum = []
 
     for id in tqdm(get_train_samples(), desc='Sorting train samples'):
@@ -44,7 +50,12 @@ def get_train_samples_sorted():
     sorted_masks = sorted(masks_sum, key=lambda x: x[1])
     ids = [id for id, mask_sum in sorted_masks]
 
+    torch.save(ids, path_folds)
+
     return ids
+
+
+print(get_train_samples_sorted())
 
 
 def k_fold():
