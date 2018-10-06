@@ -11,13 +11,8 @@ args = parser.parse_args()
 
 name = args.name
 
-tta = [
-    tta.Pipeline([tta.Translate(40), tta.Pad((13, 14, 13, 14))]),
-    tta.Pipeline([tta.Translate(40), tta.Pad((13, 14, 13, 14)), tta.Flip()])
-]
-
 test_predictions = utils.TestPredictions(name, mode='val')
-for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
     # Get the model architecture
     Model = locate('experiments.' + name + '.Model')
     model = Model(name, i)
@@ -25,11 +20,7 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
     # Load the best performing checkpoint
     model.load()
 
-    # Set model tta
-    model.tta = tta
-
     # Predict the test data
-    test_predictions.add_predictions(model.test(samples_val, dir_test='./data/train', predict=model.predict))
-
+    test_predictions.add_predictions(model.test(samples_val, dir_test='./data/train', predict=model.predict_raw))
 
 test_predictions.save()

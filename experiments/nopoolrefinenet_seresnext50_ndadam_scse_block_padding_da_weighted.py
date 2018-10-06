@@ -6,9 +6,10 @@ from torch.nn import DataParallel
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ela import transformations, generator, random
+from ela import generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.refinenet import RefineNetUpsampleClassifier, SCSERefineNetBlock, CRP, DualAttentation
+from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
 from nets.backbones import SCSENoPoolResNextBase
 from nets.encoders.senet import se_resnext50_32x4d
 from metrics import iou, mAP
@@ -28,11 +29,12 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
+        self.net = DualHypercolumnCatRefineNet(
             SCSENoPoolResNextBase(se_resnext50_32x4d()),
             num_features=128,
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
-            block=SCSERefineNetBlock
+            classifier=lambda c: RefineNetUpsampleClassifier(2*c, scale_factor=2),
+            block=SCSERefineNetBlock,
+            crp=[DualAttentation, CRP, CRP, CRP]
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -132,8 +134,7 @@ class Model:
                 translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
-            ),
-            transformations.Padding(((13, 14), (13, 14), (0, 0)))
+            )
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
@@ -149,11 +150,17 @@ class Model:
         with tqdm(total=len(dataloader), leave=False) as pbar, torch.enable_grad():
             net.train()
 
+            padding = tta.Pad((13, 14, 13, 14))
+
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = net(images)
+                masks_predictions = padding.transform_backward(net(padding.transform_forward(images))).contiguous()
 
-                loss = criterion(masks_predictions, masks_targets)
+                mask_weights = masks_targets.view(masks_targets.size(0), -1).sum(dim=1)
+                distance_weight = utils.create_distance_tensor(101).unsqueeze(0).unsqueeze(0).cuda()
+                distance_weight = (distance_weight.expand_as(masks_targets) * masks_targets).view(masks_targets.size(0), -1).sum(dim=1)
+
+                loss = criterion(masks_predictions, masks_targets) * (distance_weight / (mask_weights+1)).sum(dim=0)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -235,7 +242,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(5)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

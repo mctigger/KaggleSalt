@@ -17,10 +17,13 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
+    'nopoolrefinenet_seresnext50_ndadam_scse_block_resize',
+    'nopoolrefinenet_seresnext50_ndadam_scse_block_padding',
+    'nopoolrefinenet_dpn92_resize',
     'nopoolrefinenet_dpn92_padding',
 ]
 
-ensemble_name = 'nopoolrefinenet_dpn92_padding'
+ensemble_name = 'ensemble_dpn92_seresnext50_padding+resize'
 
 test_predictions_experiment = []
 

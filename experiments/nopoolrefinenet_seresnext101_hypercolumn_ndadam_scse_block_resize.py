@@ -8,9 +8,10 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.refinenet_hypercolumn import HypercolumnCatRefineNet
+from nets.refinenet import RefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnext50_32x4d
+from nets.encoders.senet import se_resnext101_32x4d
 from metrics import iou, mAP
 from optim import NDAdam
 import datasets
@@ -28,15 +29,15 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            SCSENoPoolResNextBase(se_resnext50_32x4d()),
+        self.net = HypercolumnCatRefineNet(
+            SCSENoPoolResNextBase(se_resnext101_32x4d()),
             num_features=128,
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
+            classifier=lambda c: RefineNetUpsampleClassifier(640, scale_factor=2),
             block=SCSERefineNetBlock
         )
         self.tta = [
-            tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
-            tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
+            tta.Pipeline([tta.Resize((128, 128))]),
+            tta.Pipeline([tta.Resize((128, 128)), tta.Flip()])
         ]
 
     def save(self):
@@ -83,7 +84,7 @@ class Model:
         return masks_predictions
 
     def fit(self, samples_train, samples_val):
-        net = DataParallel(self.net)
+        net = DataParallel(self.net).cuda()
 
         optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
@@ -133,7 +134,7 @@ class Model:
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
             ),
-            transformations.Padding(((13, 14), (13, 14), (0, 0)))
+            transformations.Resize((128, 128), **utils.transformations_options)
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
@@ -211,7 +212,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

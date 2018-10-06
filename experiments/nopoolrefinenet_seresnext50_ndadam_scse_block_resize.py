@@ -83,7 +83,7 @@ class Model:
         return masks_predictions
 
     def fit(self, samples_train, samples_val):
-        net = DataParallel(self.net)
+        net = DataParallel(self.net).cuda()
 
         optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
@@ -122,7 +122,7 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((100 - e) / 100))
+        alpha = 2 * max(0, ((50 - e) / 50))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([
@@ -235,10 +235,10 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
         model = Model(name, i)
-        stats = model.fit(samples_train, samples_val)
-        experiment_logger.set_split(i, stats)
+        #stats = model.fit(samples_train, samples_val)
+        #experiment_logger.set_split(i, stats)
 
         # Load the best performing checkpoint
         model.load()
@@ -251,7 +251,7 @@ def main():
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
 
-    experiment_logger.save()
+    #experiment_logger.save()
 
 
 if __name__ == "__main__":

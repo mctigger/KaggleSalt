@@ -4,7 +4,6 @@ import pathlib
 import torch
 from torch.nn import DataParallel
 from torch.utils.data import DataLoader
-from torch.optim import Adam
 from torchvision.models.resnet import resnet34
 from tqdm import tqdm
 
@@ -13,6 +12,7 @@ from ela import transformations, generator, random
 from nets.refinenet import ModifiedRefineNetUpsampleClassifier, OC, SCSERefineNetBlock, CRP
 from nets.refinenet_hypercolumn import HypercolumnCatRefineNet
 from nets.backbones import SCSENoPoolResNetBase
+from optim import NDAdam
 from metrics import iou, mAP
 import datasets
 import utils
@@ -88,14 +88,14 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
-            130: (1e-5, 1e-6),
+            160: (1e-5, 1e-6),
         })
 
-        epochs = 150
+        epochs = 200
 
         best_val_mAP = 0
         best_stats = None
@@ -125,7 +125,7 @@ class Model:
         return best_stats
 
     def train(self, net, samples, optimizer, e):
-        alpha = 2 * max(0, ((30 - e) / 30))
+        alpha = 2 * max(0, ((50 - e) / 50))
         criterion = losses.ELULovaszFocalWithLogitsLoss(alpha, 2 - alpha)
 
         transforms = generator.TransformationsGenerator([

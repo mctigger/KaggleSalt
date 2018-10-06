@@ -130,8 +130,6 @@ dependencies:
   - xz=5.2.4=h14c3975_4
   - zeromq=4.2.5=hf484d3e_0
   - zlib=1.2.11=ha838bed_2
-  - zope=1.0=py36_0
-  - zope.interface=4.5.0=py36h14c3975_0
   - pytorch=0.4.1=py36_cuda9.0.176_cudnn7.1.2_1
   - torchvision=0.2.1=py36_1
   - pip:

@@ -393,3 +393,20 @@ transformations_options = {
     'clip': False,
     'preserve_range': True
 }
+
+
+def create_distance_tensor(size):
+    horizontal = torch.cat([torch.arange(size // 2, 0, -1), torch.arange(1, size // 2 + 2)]) \
+        .unsqueeze(0) \
+        .expand(size, size) \
+        .float()
+
+    vertical = torch.cat([torch.arange(size // 2, 0, -1), torch.arange(1, size // 2 + 2)]) \
+        .unsqueeze(1) \
+        .expand(size, size) \
+        .float()
+
+    normalized_distance = vertical + horizontal
+    normalized_distance = torch.exp(normalized_distance / 100 + 0.5)
+
+    return normalized_distance

@@ -10,7 +10,7 @@ from ela import transformations, generator, random
 
 from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnext50_32x4d
+from nets.encoders.senet import se_resnet50
 from metrics import iou, mAP
 from optim import NDAdam
 import datasets
@@ -29,7 +29,7 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = RefineNet(
-            SCSENoPoolResNextBase(se_resnext50_32x4d()),
+            SCSENoPoolResNextBase(se_resnet50()),
             num_features=128,
             classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
             block=SCSERefineNetBlock
@@ -211,7 +211,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():

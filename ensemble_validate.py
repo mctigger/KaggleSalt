@@ -26,7 +26,7 @@ def sigmoid(x):
 
 
 experiments = [
-    'nopoolrefinenet_dpn98'
+    'nopoolrefinenet_dpn92_padding',
 ]
 
 test_predictions_experiment = []
@@ -42,27 +42,27 @@ transforms = generator.TransformationsGenerator([])
 dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
 split_map = []
-for train, val in utils.mask_stratified_k_fold():
+for train, val in utils.mask_stratified_k_fold(7):
     predictions = []
     masks = []
     with tqdm(total=len(val), leave=False) as pbar:
         for id in val:
             _, mask, _ = dataset.get_by_id(id)
-            test_prediction = np.stack([predictions[id] for predictions in test_predictions_experiment], axis=0)
+            test_prediction = np.concatenate([predictions[id] for predictions in test_predictions_experiment], axis=0)
             prediction = torch.FloatTensor(test_prediction)
             mask = torch.FloatTensor(mask)
 
             predictions.append(prediction)
             masks.append(mask)
 
+    predictions = torch.stack(predictions, dim=0).cuda()
+    masks = torch.stack(masks, dim=0).cuda()
 
-    prediction = torch.cat(predictions, dim=0)
-    masks = torch.stack(masks, dim=0)
+    predictions = torch.sigmoid(predictions)
+    predictions = torch.mean(predictions, dim=1)
+    predictions = (predictions > 0.5).float()
 
-    prediction = (torch.sigmoid(prediction) > 0.5).float()
-    prediction = torch.mean(prediction, dim=1)
-
-    map = metrics.mAP(prediction, masks)
+    map = metrics.mAP(predictions, masks)
     split_map.append(map)
 
 print(np.mean(split_map), split_map)

@@ -2,15 +2,16 @@ import os
 import pathlib
 
 import torch
-from torch.nn import DataParallel
+from torch.nn import DataParallel, functional as F
 from torch.utils.data import DataLoader
+from torchvision.models import resnet34
 from tqdm import tqdm
 
-from ela import transformations, generator, random
+from ela import generator, random, transformations
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
-from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnext50_32x4d
+from nets.refinenet import SmallDropoutRefineNetUpsampleClassifier, SCSERefineNetBlock, CRP, IdentityCRP
+from nets.refinenet_aux import AuxDualHypercolumnCatRefineNet
+from nets.backbones import SCSENoPoolResNetBase
 from metrics import iou, mAP
 from optim import NDAdam
 import datasets
@@ -28,11 +29,12 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            SCSENoPoolResNextBase(se_resnext50_32x4d()),
+        self.net = AuxDualHypercolumnCatRefineNet(
+            SCSENoPoolResNetBase(resnet34(pretrained=True)),
             num_features=128,
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
-            block=SCSERefineNetBlock
+            classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2*c, scale_factor=2, dropout=0.1),
+            block=SCSERefineNetBlock,
+            crp=[IdentityCRP, CRP, CRP, CRP]
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -62,7 +64,7 @@ class Model:
     def predict_raw(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions, _, _ = net(tta.transform_forward(images))
             masks_predictions = tta.transform_backward(masks_predictions)
             tta_masks.append(masks_predictions)
 
@@ -73,7 +75,7 @@ class Model:
     def predict(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions, _, _ = net(tta.transform_forward(images))
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
@@ -129,14 +131,19 @@ class Model:
             random.RandomFlipLr(),
             random.RandomAffine(
                 image_size=101,
-                translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
+                translation=lambda rs: (rs.randint(-10, 10), rs.randint(-10, 10)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
+                rotation=lambda rs: rs.randint(-5, 5),
                 **utils.transformations_options
             ),
             transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        transforms_image = generator.TransformationsGenerator([
+            random.RandomColorPerturbation(std=1)
+        ])
+
+        dataset = datasets.ImageDataset(samples, './data/train', transforms, transforms_image=transforms_image)
         dataloader = DataLoader(
             dataset,
             num_workers=10,
@@ -151,9 +158,14 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = net(images)
+                masks_predictions, aux_pam, aux_cam = net(images)
 
-                loss = criterion(masks_predictions, masks_targets)
+                loss_pam = criterion(F.interpolate(aux_pam, size=128, mode='bilinear'), masks_targets)
+                loss_cam = criterion(F.interpolate(aux_cam, size=128, mode='bilinear'), masks_targets)
+
+                loss_segmentation = criterion(masks_predictions, masks_targets)
+                loss = loss_segmentation + loss_pam + loss_cam
+
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -235,7 +247,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
+    for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(5)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)

@@ -2,6 +2,7 @@ experiment train_iou train_loss train_mAP val_iou val_mAP
 nopoolrefinenet_seresnext101_ndadam_scse_block_pseudo_labels 0.9405 0.5082 0.9256 0.8916 0.8707
 nopoolrefinenet_dpn92_pseudo_labels_no_leak 0.9391 0.5221 0.9246 0.8917 0.8706
 nopoolrefinenet_dpn92_pseudo_labels_scse 0.9343 0.5768 0.9181 0.8929 0.8693
+nopoolrefinenet_dpn92_resize 0.9329 0.4704 0.9099 0.8881 0.8679
 nopoolrefinenet_dpn92_pseudo_labels_subset 0.9388 0.5296 0.9226 0.8908 0.8679
 nopoolrefinenet_dpn92_hypercolumn 0.9458 0.4341 0.9335 0.8887 0.8665
 nopoolrefinenet_dpn107_augmentation 0.9232 0.6382 0.8996 0.8858 0.8632
@@ -13,6 +14,8 @@ nopoolrefinenet_dpn92_ndadam_hypercolumn_cat 0.9414 0.4853 0.9268 0.8846 0.8620
 nopoolrefinenet_dpn92_augmentation 0.9203 0.6444 0.8972 0.8849 0.8615
 nopoolrefinenet_dpn92_oc 0.9423 0.4786 0.9276 0.8845 0.8614
 nopoollkm_dpn92_pyramid_concat 0.9407 0.4843 0.9267 0.8829 0.8611
+nopoolrefinenet_seresnext50_ndadam_scse_block_resize 0.9382 0.4136 0.9155 0.8836 0.8603
+nopoolrefinenet_seresnext50_ndadam_scse_block_padding 0.9357 0.5337 0.9184 0.8816 0.8590
 nopoollkm_dpn92 0.9502 0.3985 0.9388 0.8802 0.8576
 nopoollkm_resnet50_pyramid_concat 0.9376 0.5174 0.9197 0.8776 0.8533
 refinenet_hypercolumn_dpn92_128 0.9486 0.1274 0.9331 0.8774 0.8528

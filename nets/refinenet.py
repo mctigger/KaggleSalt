@@ -3,7 +3,7 @@ from torch import nn
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
-from nets.modules import ASP_OC_Module, SCSEBlock, ModifiedSCSEModule, DualSCSEModule, BaseOC_Context_Module, SelfAttentionBlock2D, PreActivationBasicBlock, PreActivationBottleneckBlock, SpatialAttentionModule, DistanceAttentionModule
+from nets.modules import CAM_Module, PAM_Module, SCSEBlock, ModifiedSCSEModule, DualSCSEModule, BaseOC_Context_Module, SelfAttentionBlock2D, PreActivationBasicBlock, PreActivationBottleneckBlock, SpatialAttentionModule, DistanceAttentionModule
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
@@ -413,13 +413,35 @@ class AspOC(nn.Module):
 class OC(nn.Module):
     def __init__(self, channels):
         super(OC, self).__init__()
-        self.oc = BaseOC_Context_Module(channels, channels, key_channels=channels // 2, value_channels=channels, dropout=0.05, sizes=[1, 2])
+        self.oc = BaseOC_Context_Module(channels, channels, key_channels=channels // 2, value_channels=channels, sizes=[1, 2])
         self.conv = conv3x3(channels, channels)
 
     def forward(self, residual):
         x = self.conv(self.oc(residual))
 
-        return x + residual
+        return x
+
+
+class DualAttentation(nn.Module):
+    def __init__(self, channels):
+        super(DualAttentation, self).__init__()
+        self.cam = CAM_Module(channels)
+        self.pam = PAM_Module(channels)
+        self.conv_cam_1 = conv3x3(channels, channels)
+        self.conv_cam_2 = conv3x3(channels, channels)
+        self.conv_pam_1 = conv3x3(channels, channels)
+        self.conv_pam_2 = conv3x3(channels, channels)
+
+    def forward(self, x):
+        cam = self.conv_cam_1(x)
+        cam = self.cam(cam)
+        cam = self.conv_cam_2(cam)
+
+        pam = self.conv_pam_1(x)
+        pam = self.pam(pam)
+        pam = self.conv_pam_2(pam)
+
+        return cam + pam
 
 
 class RefineNetUpsampleClassifier(nn.Module):
@@ -440,19 +462,56 @@ class RefineNetUpsampleClassifier(nn.Module):
         return self.classifier(x)
 
 
-class RefineNetDropoutUpsampleClassifier(nn.Module):
-    def __init__(self, in_channels, channels=None, scale_factor=4, rcu=RCU, dropout=0.0, align_corners=False):
-        super(RefineNetDropoutUpsampleClassifier, self).__init__()
+class DropoutRefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, in_channels, channels=None, scale_factor=4, rcu=RCU, dropout=0):
+        super(DropoutRefineNetUpsampleClassifier, self).__init__()
 
         if channels is None:
             channels = in_channels
 
         self.classifier = nn.Sequential(*[
+            nn.Conv2d(in_channels, channels * rcu.multiplier, kernel_size=1, bias=False),
+            rcu(rcu.multiplier * channels, channels),
             nn.Dropout2d(dropout),
-            rcu(rcu.multiplier * channels, channels),
-            rcu(rcu.multiplier * channels, channels),
             nn.Conv2d(rcu.multiplier * channels, 1, kernel_size=1, bias=True),
-            nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=align_corners)
+            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
+
+
+class SmallDropoutRefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, channels, scale_factor=4, rcu=RCU, dropout=0):
+        super(SmallDropoutRefineNetUpsampleClassifier, self).__init__()
+
+        self.classifier = nn.Sequential(*[
+            conv_3x3(rcu.multiplier * channels, rcu.multiplier * channels),
+            nn.BatchNorm2d(rcu.multiplier * channels),
+            nn.ReLU(),
+            nn.Dropout2d(dropout),
+            nn.Conv2d(rcu.multiplier * channels, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
+
+
+class DADropoutRefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, channels, scale_factor=4, rcu=RCU, dropout=0):
+        super(DADropoutRefineNetUpsampleClassifier, self).__init__()
+
+        self.da = DualAttentation(channels)
+
+        self.classifier = nn.Sequential(*[
+            self.da,
+            conv_3x3(rcu.multiplier * channels, rcu.multiplier * channels),
+            nn.BatchNorm2d(rcu.multiplier * channels),
+            nn.ReLU(),
+            nn.Dropout2d(dropout),
+            nn.Conv2d(rcu.multiplier * channels, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
         ])
 
     def forward(self, x):

@@ -3,16 +3,17 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
+from torch.optim import Adam
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNet, RefineNetUpsampleClassifier, SCSERefineNetBlock
-from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnext50_32x4d
+from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
+from nets.refinenet import SCSERefineNetBlock, SmallDropoutRefineNetUpsampleClassifier
+from nets.backbones import SCSENoPoolDPN92Base
+from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
-from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -28,10 +29,12 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = RefineNet(
-            SCSENoPoolResNextBase(se_resnext50_32x4d()),
+        self.net = DualHypercolumnCatRefineNet(
+            SCSENoPoolDPN92Base(dpn92()),
             num_features=128,
-            classifier=lambda c: RefineNetUpsampleClassifier(c, scale_factor=2),
+            block_multiplier=1,
+            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
+            classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2*128, scale_factor=2),
             block=SCSERefineNetBlock
         )
         self.tta = [
@@ -85,7 +88,7 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
+        optimizer = Adam(net.parameters(), lr=1e-4, weight_decay=1e-4)
         lr_scheduler = utils.CyclicLR(optimizer, 5, {
             0: (1e-4, 1e-6),
             100: (0.5e-4, 1e-6),
@@ -176,7 +179,7 @@ class Model:
         dataloader = DataLoader(
             dataset,
             num_workers=10,
-            batch_size=32
+            batch_size=16
         )
 
         average_meter_val = meters.AverageMeter()
@@ -211,7 +214,7 @@ class Model:
         test_dataloader = DataLoader(
             test_dataset,
             num_workers=10,
-            batch_size=128
+            batch_size=32
         )
 
         with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
