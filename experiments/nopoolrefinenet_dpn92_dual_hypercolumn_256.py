@@ -136,7 +136,7 @@ class Model:
                 **utils.transformations_options
             ),
             transformations.Resize((202, 202), **utils.transformations_options),
-            transformations.Padding((27, 27, 27, 27))
+            transformations.Padding(((27, 27), (27, 27), (0, 0)))
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
