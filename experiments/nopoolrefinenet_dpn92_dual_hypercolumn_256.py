@@ -135,7 +135,8 @@ class Model:
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
             ),
-            transformations.Resize((202, 202), **utils.transformations_options)
+            transformations.Resize((202, 202), **utils.transformations_options),
+            transformations.Padding((27, 27, 27, 27))
         ])
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
