@@ -35,7 +35,7 @@ def get_mosaic_pairs():
 
 
 def get_mosaic_samples():
-    return np.array([path[:-4] for path in os.listdir('./data/mosaic/images')])
+    return np.array([path[:-4] for path in os.listdir('./data/mosaic_pairs/images')])
 
 
 def get_test_samples():

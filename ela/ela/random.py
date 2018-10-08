@@ -151,16 +151,18 @@ class RandomCrop(RandomTransformation):
     """Randomly crops a quadratic patch of a given size from the input.
 
     """
-    def __init__(self, crop_size):
+    def __init__(self, crop_size, v=(0, 1), h=(0, 1)):
         """
         :param crop_size: Edge size of the quadratic crop.
         :type crop_size: int
         """
         self.crop_size = crop_size
+        self.v = v
+        self.h = h
 
     def draw(self, rs):
-        vertical = rs.rand()
-        horizontal = rs.rand()
+        vertical = rs.uniform(self.v[0], self.v[1])
+        horizontal = rs.uniform(self.h[0], self.h[1])
         
         return transformations.CropByFloat(self.crop_size, self.crop_size, vertical, horizontal)
 
