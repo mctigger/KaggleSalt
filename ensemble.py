@@ -19,7 +19,7 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_dpn92_dual_hypercolumn_aux_data_pseudo_labels'
+    'nopoolrefinenet_dpn92_dual_hypercolumn_aux_data_pseudo_labels',
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels'
 ]
 
