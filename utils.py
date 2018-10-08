@@ -30,6 +30,14 @@ def get_aux_samples():
     return np.array([path[:-4] for path in os.listdir('./data/auxiliary_small/images')])
 
 
+def get_mosaic_pairs():
+    return np.array([(path[:-4].split('_')[2], path[:-4].split('_')[3]) for path in os.listdir('./data/mosaic_pairs/images')])
+
+
+def get_mosaic_samples():
+    return np.array([path[:-4] for path in os.listdir('./data/mosaic/images')])
+
+
 def get_test_samples():
     return np.array([path[:-4] for path in os.listdir('./data/test/images')])
 
