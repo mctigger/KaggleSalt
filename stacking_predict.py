@@ -11,7 +11,7 @@ args = parser.parse_args()
 name = args.name
 
 test_predictions = utils.TestPredictions(name, mode='val')
-for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(7)):
+for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(5)):
     # Get the model architecture
     Model = locate('experiments.' + name + '.Model')
     model = Model(name, i)
