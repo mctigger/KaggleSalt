@@ -95,10 +95,10 @@ class Model:
         epochs = 200
         optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
         lr_scheduler = utils.PolyLR(optimizer, 50, 0.9, steps={
-            0: 1e-2,
-            50: 0.5 * 1e-2,
-            100: 0.5 * 0.5 * 1e-2,
-            150: 0.5 * 0.5 * 0.5 * 1e-2,
+            0: 0.5 * 1e-2,
+            50: 0.5 * 0.5 * 1e-2,
+            100: 0.5 * 0.5 * 0.5 * 1e-2,
+            150: 0.5 * 0.5 * 0.5 * 0.5 * 1e-2,
         })
 
         best_val_mAP = 0
