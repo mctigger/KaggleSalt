@@ -18,9 +18,12 @@ def ensemble_mean_mean(p):
     return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
 
-experiments = ['nopoolrefinenet_dpn92_dual_hypercolumn_aux_data_pseudo_labels']
+experiments = [
+    'nopoolrefinenet_dpn92_dual_hypercolumn_aux_data_pseudo_labels'
+    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels'
+]
 
-ensemble_name = 'nopoolrefinenet_dpn92_dual_hypercolumn_aux_data_pseudo_labels'
+ensemble_name = 'nopoolrefinenet_dpn92_dual_hypercolumn_aux_data_pseudo_labels + nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels'
 
 test_predictions_experiment = []
 
