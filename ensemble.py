@@ -18,16 +18,16 @@ def ensemble_mean_mean(p):
     return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
 
-experiments = ['nopoolrefinenet_dpn92_dual_hypercolumn_small_poly_lr']
+experiments = ['nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels']
 
-ensemble_name = 'nopoolrefinenet_dpn92_dual_hypercolumn_small_poly_lr split-0'
+ensemble_name = 'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels'
 
 test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
     n_splits = locate('experiments.' + name + '.n_splits')
-    for i in range(0, 1):
+    for i in range(0, 5):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)
