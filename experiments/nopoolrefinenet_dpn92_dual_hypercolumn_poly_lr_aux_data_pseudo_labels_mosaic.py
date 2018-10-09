@@ -138,7 +138,8 @@ class Model:
                 translation=lambda rs: (rs.randint(-20, 20), rs.randint(-20, 20)),
                 scale=lambda rs: (rs.uniform(0.85, 1.15), 1),
                 **utils.transformations_options
-            )
+            ),
+            transformations.Padding(((13, 14), (13, 14), (0, 0)))
         ])
 
         samples_aux = list(set(samples).intersection(set(utils.get_aux_samples())))
@@ -184,7 +185,7 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = padding.transform_backward(net(padding.transform_forward(images))).contiguous()
+                masks_predictions = padding.transform_backward(net(images)).contiguous()
 
                 loss = criterion(masks_predictions, masks_targets)
                 loss.backward()
