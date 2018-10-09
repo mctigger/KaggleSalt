@@ -19,10 +19,10 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_pseudo_labels',
 ]
 
-ensemble_name = 'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels'
+ensemble_name = 'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_pseudo_labels'
 
 test_predictions_experiment = []
 
