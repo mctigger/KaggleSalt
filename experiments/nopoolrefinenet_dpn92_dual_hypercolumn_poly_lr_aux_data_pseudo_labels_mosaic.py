@@ -150,7 +150,7 @@ class Model:
 
         pairs_mosaic = utils.get_mosaic_pairs()
         samples_mosaic = utils.get_mosaic_samples()
-        samples_mosaic = [sample for sample, pair in zip(samples_mosaic, pairs_mosaic) if pair[0] is in samples and pair[1] is in samples]
+        samples_mosaic = [sample for sample, pair in zip(samples_mosaic, pairs_mosaic) if pair[0] in samples and pair[1] in samples]
         dataset_mosaic = datasets.ImageDataset(samples_mosaic, './data/mosaic_pairs', transforms_mosaic)
         print('Using {} mosaic samples from {}'.format(len(dataset_mosaic), len(pairs_mosaic)))
 
