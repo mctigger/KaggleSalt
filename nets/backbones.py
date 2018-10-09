@@ -312,6 +312,7 @@ class SCSENoPoolResNetBase(NoPoolResNetBase):
 
         return x_1, x_2, x_3, x_4
 
+
 class NoPoolDenseNetBase(nn.Module):
     def __init__(self, resnet):
         super(NoPoolDenseNetBase, self).__init__()
