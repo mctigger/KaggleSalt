@@ -11,8 +11,8 @@ from ela import transformations, generator, random
 
 from nets.refinenet import RefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
-from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnext101_32x4d
+from nets.backbones import SCSENoPoolResNetBase
+from nets.encoders.senet import se_resnet50
 from metrics import iou, mAP
 import datasets
 import utils
@@ -31,7 +31,7 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
-            SCSENoPoolResNextBase(se_resnext101_32x4d()),
+            SCSENoPoolResNetBase(se_resnet50()),
             num_features=128,
             classifier=lambda c: RefineNetUpsampleClassifier(2*c, scale_factor=2),
             block=SCSERefineNetBlock
