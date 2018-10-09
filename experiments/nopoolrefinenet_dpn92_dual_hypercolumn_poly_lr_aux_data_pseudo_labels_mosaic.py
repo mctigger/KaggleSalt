@@ -185,6 +185,7 @@ class Model:
 
             for images, masks_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
+                masks_targets = padding.transform_backward(masks_targets).contiguous()
                 masks_predictions = padding.transform_backward(net(images)).contiguous()
 
                 loss = criterion(masks_predictions, masks_targets)
