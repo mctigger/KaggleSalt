@@ -37,7 +37,7 @@ for name in experiments:
 test_samples = utils.get_test_samples()
 
 predictions_mean = []
-for id in tqdm(test_samples):
+for id in tqdm(test_samples, ascii=True):
     # p = n_models x h x w
     p = []
     for i, test_predictions_split in enumerate(test_predictions_experiment):
