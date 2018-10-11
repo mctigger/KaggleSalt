@@ -166,7 +166,7 @@ class Model:
 
         average_meter_train = meters.AverageMeter()
 
-        with tqdm(total=len(dataloader), leave=False) as pbar, torch.enable_grad():
+        with tqdm(total=len(dataloader), leave=False, ascii=True) as pbar, torch.enable_grad():
             net.train()
 
             padding = tta.Pad((13, 14, 13, 14))
@@ -203,7 +203,7 @@ class Model:
 
         average_meter_val = meters.AverageMeter()
 
-        with tqdm(total=len(dataloader), leave=True) as pbar, torch.no_grad():
+        with tqdm(total=len(dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, masks_targets in dataloader:
@@ -236,7 +236,7 @@ class Model:
             batch_size=32
         )
 
-        with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
+        with tqdm(total=len(test_dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, ids in test_dataloader:
