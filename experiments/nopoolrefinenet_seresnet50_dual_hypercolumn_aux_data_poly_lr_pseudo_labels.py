@@ -11,7 +11,7 @@ from ela import transformations, generator, random
 
 from nets.refinenet import RefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
-from nets.backbones import SCSENoPoolResNetBase
+from nets.backbones import SCSENoPoolResNextBase
 from nets.encoders.senet import se_resnet50
 from metrics import iou, mAP
 import datasets
@@ -31,7 +31,7 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
-            SCSENoPoolResNetBase(se_resnet50()),
+            SCSENoPoolResNextBase(se_resnet50()),
             num_features=128,
             classifier=lambda c: RefineNetUpsampleClassifier(2*c, scale_factor=2),
             block=SCSERefineNetBlock
@@ -256,6 +256,8 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+        if i < 2:
+            continue
         print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)

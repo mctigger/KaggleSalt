@@ -26,7 +26,7 @@ def sigmoid(x):
 
 
 experiments = [
-    'nopoolrefinenet_dpn92_padding',
+    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
 
 test_predictions_experiment = []
@@ -42,7 +42,7 @@ transforms = generator.TransformationsGenerator([])
 dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
 split_map = []
-for train, val in utils.mask_stratified_k_fold(7):
+for train, val in utils.mask_stratified_k_fold(5):
     predictions = []
     masks = []
     with tqdm(total=len(val), leave=False) as pbar:
@@ -61,6 +61,8 @@ for train, val in utils.mask_stratified_k_fold(7):
     predictions = torch.sigmoid(predictions)
     predictions = torch.mean(predictions, dim=1)
     predictions = (predictions > 0.5).float()
+
+    print(predictions.size())
 
     map = metrics.mAP(predictions, masks)
     split_map.append(map)

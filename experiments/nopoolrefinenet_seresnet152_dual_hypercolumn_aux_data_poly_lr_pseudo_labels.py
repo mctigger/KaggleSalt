@@ -3,6 +3,7 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
+from torch.optim import SGD
 from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from tqdm import tqdm
 
@@ -11,9 +12,8 @@ from ela import transformations, generator, random
 from nets.refinenet import RefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
 from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnet50
+from nets.encoders.senet import se_resnet152
 from metrics import iou, mAP
-from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -31,7 +31,7 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
-            SCSENoPoolResNextBase(se_resnet50()),
+            SCSENoPoolResNextBase(se_resnet152()),
             num_features=128,
             classifier=lambda c: RefineNetUpsampleClassifier(2*c, scale_factor=2),
             block=SCSERefineNetBlock
@@ -89,14 +89,14 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
-        })
-
         epochs = 200
+        optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
+        lr_scheduler = utils.PolyLR(optimizer, 51, 0.9, steps={
+            0: 1e-2,
+            50: 0.5 * 1e-2,
+            100: 0.5 * 0.5 * 1e-2,
+            150: 0.5 * 0.5 * 0.5 * 1e-2,
+        })
 
         best_val_mAP = 0
         best_stats = None
@@ -256,9 +256,6 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
-        if i < 2:
-            continue
-
         print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)

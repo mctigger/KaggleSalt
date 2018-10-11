@@ -3,6 +3,7 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
+from torch.optim import SGD
 from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from tqdm import tqdm
 
@@ -13,7 +14,6 @@ from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
 from nets.backbones import SCSENoPoolResNextBase
 from nets.encoders.senet import se_resnet50
 from metrics import iou, mAP
-from optim import NDAdam
 import datasets
 import utils
 import meters
@@ -89,14 +89,14 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
-        })
-
         epochs = 200
+        optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
+        lr_scheduler = utils.PolyLR(optimizer, 51, 0.9, steps={
+            0: 1e-2,
+            50: 0.5 * 1e-2,
+            100: 0.5 * 0.5 * 1e-2,
+            150: 0.5 * 0.5 * 0.5 * 1e-2,
+        })
 
         best_val_mAP = 0
         best_stats = None
@@ -152,8 +152,8 @@ class Model:
         )
 
         dataset = datasets.ImageDataset(samples, './data/train', transforms)
-        weight_train = len(dataset_pseudo) / len(dataset) * 2
-        weight_aux = weight_train / 2
+        weight_train = len(dataset_pseudo) / len(dataset) * 4
+        weight_aux = weight_train / 4
         weights = [weight_train] * len(dataset) + [weight_aux] * len(dataset_aux) + [1] * len(dataset_pseudo)
         dataloader = DataLoader(
             ConcatDataset([dataset, dataset_aux, dataset_pseudo]),
@@ -258,7 +258,6 @@ def main():
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
         if i < 2:
             continue
-
         print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)

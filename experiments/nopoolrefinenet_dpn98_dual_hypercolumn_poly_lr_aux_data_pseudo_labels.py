@@ -3,22 +3,23 @@ import pathlib
 
 import torch
 from torch.nn import DataParallel
+from torch.optim import SGD
 from torch.utils.data import DataLoader, ConcatDataset, WeightedRandomSampler
 from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import RefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.refinenet import SmallDropoutRefineNetUpsampleClassifier
 from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
-from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnet50
+from nets.backbones import NoPoolDPN98Base
+from nets.encoders.dpn import dpn98
 from metrics import iou, mAP
-from optim import NDAdam
 import datasets
 import utils
 import meters
 import losses
 import tta
+
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
@@ -31,10 +32,11 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
-            SCSENoPoolResNextBase(se_resnet50()),
+            NoPoolDPN98Base(dpn98()),
             num_features=128,
-            classifier=lambda c: RefineNetUpsampleClassifier(2*c, scale_factor=2),
-            block=SCSERefineNetBlock
+            block_multiplier=1,
+            num_features_base=[336, 768, 1728, 2688],
+            classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -89,14 +91,14 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        optimizer = NDAdam(net.parameters(), lr=1e-4, weight_decay=1e-4)
-        lr_scheduler = utils.CyclicLR(optimizer, 5, {
-            0: (1e-4, 1e-6),
-            100: (0.5e-4, 1e-6),
-            160: (1e-5, 1e-6),
-        })
-
         epochs = 200
+        optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
+        lr_scheduler = utils.PolyLR(optimizer, 50, 0.9, steps={
+            0: 1e-2,
+            50: 0.5 * 1e-2,
+            100: 0.5 * 0.5 * 1e-2,
+            150: 0.5 * 0.5 * 0.5 * 1e-2,
+        })
 
         best_val_mAP = 0
         best_stats = None
@@ -164,7 +166,7 @@ class Model:
 
         average_meter_train = meters.AverageMeter()
 
-        with tqdm(total=len(dataloader), leave=False, ascii=True) as pbar, torch.enable_grad():
+        with tqdm(total=len(dataloader), leave=False) as pbar, torch.enable_grad():
             net.train()
 
             padding = tta.Pad((13, 14, 13, 14))
@@ -201,7 +203,7 @@ class Model:
 
         average_meter_val = meters.AverageMeter()
 
-        with tqdm(total=len(dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
+        with tqdm(total=len(dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, masks_targets in dataloader:
@@ -234,7 +236,7 @@ class Model:
             batch_size=32
         )
 
-        with tqdm(total=len(test_dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
+        with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, ids in test_dataloader:
@@ -256,9 +258,6 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
-        if i < 2:
-            continue
-
         print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)

@@ -97,13 +97,13 @@ class AnalysisDataset(Dataset):
 
     def get_by_id(self, id):
         image = self.predictions[id]
-
-        t = next(self.transforms)
-
-        image = t(image)
-
         mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
-        mask = t(mask)
+
+        if self.transforms:
+            t = next(self.transforms)
+
+            image = t(image)
+            mask = t(mask)
 
         return image, mask, id
 
@@ -249,3 +249,14 @@ class TestDataAnalysisDataset(Dataset):
         image = img_as_float(imread(join(self.path, 'images', id) + '.png'))
 
         return image, id
+
+
+class IdDataset:
+    def __init__(self, samples, path):
+        self.samples = samples
+        self.path = path
+
+    def __getitem__(self, id):
+        mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
+
+        return torch.FloatTensor(mask)
