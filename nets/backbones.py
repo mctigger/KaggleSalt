@@ -244,6 +244,49 @@ class NoPoolDPN107Base(nn.Module):
         return x1, x2, x3, x4
 
 
+class NoPoolDPN131Base(nn.Module):
+    def __init__(self, dpn):
+        super(NoPoolDPN131Base, self).__init__()
+        idx = 1
+        self.layer0 = nn.Sequential(
+            dpn.features[0].conv,
+            dpn.features[0].bn,
+            dpn.features[0].act,
+        )
+
+        idx_layer = idx + dpn.k_sec[0]
+        self.layer1 = nn.Sequential(*dpn.features[idx:idx_layer])
+        self.out1 = CatBnAct(352)
+        idx = idx_layer
+
+        idx_layer = idx + dpn.k_sec[1]
+        self.layer2 = nn.Sequential(*dpn.features[idx:idx_layer])
+        self.out2 = CatBnAct(832)
+        idx = idx_layer
+
+        idx_layer = idx + dpn.k_sec[2]
+        self.layer3 = nn.Sequential(*dpn.features[idx:idx_layer])
+        self.out3 = CatBnAct(1984)
+        idx = idx_layer
+
+        idx_layer = idx + dpn.k_sec[3]
+        self.layer4 = nn.Sequential(*dpn.features[idx:idx_layer])
+        self.out4 = CatBnAct(2688)
+
+    def forward(self, x):
+        x = self.layer0(x)
+        x = self.layer1(x)
+        x1 = self.out1(x)
+        x = self.layer2(x)
+        x2 = self.out2(x)
+        x = self.layer3(x)
+        x3 = self.out3(x)
+        x = self.layer4(x)
+        x4 = self.out4(x)
+
+        return x1, x2, x3, x4
+
+
 class ResNetBase(nn.Module):
     def __init__(self, resnet):
         super(ResNetBase, self).__init__()

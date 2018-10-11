@@ -183,6 +183,9 @@ class TestPredictions:
         self.predictions = {id: predictions[id] for id in tqdm(predictions, leave=False, ascii=True, desc='Loading predictions for {}'.format(self.name))}
         return self.predictions
 
+    def __getitem__(self, id):
+        return self.predictions[id]
+
 
 class OptimalThreshold:
     def __init__(self):

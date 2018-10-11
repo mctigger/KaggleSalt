@@ -256,6 +256,9 @@ def main():
     experiment_logger = utils.ExperimentLogger(name)
 
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
+        if i < 2:
+            continue
+
         print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)
