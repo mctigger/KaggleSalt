@@ -453,6 +453,41 @@ class SCSENoPoolResNextBase(NoPoolResNextBase):
         return x_1, x_2, x_3, x_4
 
 
+class SCSENoPoolSeNetBase(nn.Module):
+    def __init__(self, resnet):
+        super(SCSENoPoolSeNetBase, self).__init__()
+        self.layer0 = nn.Sequential(
+            resnet.layer0.conv1,
+            resnet.layer0.bn1,
+            resnet.layer0.relu1,
+            resnet.layer0.conv2,
+            resnet.layer0.bn2,
+            resnet.layer0.relu2,
+            resnet.layer0.conv3,
+            resnet.layer0.bn3,
+            resnet.layer0.relu3,
+        )
+
+        self.layer1 = resnet.layer1
+        self.layer2 = resnet.layer2
+        self.layer3 = resnet.layer3
+        self.layer4 = resnet.layer4
+
+        self.scse0 = SCSEModule(128)
+        self.scse1 = SCSEModule(256)
+        self.scse2 = SCSEModule(512)
+        self.scse3 = SCSEModule(1024)
+        self.scse4 = SCSEModule(2048)
+
+    def forward(self, x):
+        x_0 = self.scse0(self.layer0(x))
+        x_1 = self.scse1(self.layer1(x_0))
+        x_2 = self.scse2(self.layer2(x_1))
+        x_3 = self.scse3(self.layer3(x_2))
+        x_4 = self.scse4(self.layer4(x_3))
+
+        return x_1, x_2, x_3, x_4
+
 class DRNBase(nn.Module):
     def __init__(self, resnet):
         super(DRNBase, self).__init__()
