@@ -87,7 +87,7 @@ class Model:
         return masks_predictions
 
     def fit(self, samples_train, samples_val):
-        net = DataParallel(self.net)
+        net = DataParallel(self.net).cuda()
 
         epochs = 200
         optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
@@ -265,7 +265,7 @@ def main():
         model.load()
 
         # Do a final validation
-        model.validate(DataParallel(model.net), samples_val, -1)
+        model.validate(DataParallel(model.net).cuda(), samples_val, -1)
 
         # Predict the test data
         test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode='test')
