@@ -1,90 +1,125 @@
+from os.path import join
 import pickle
+
+from pydoc import locate
 
 import numpy as np
 from tqdm import tqdm
-import torch
 
+from skimage.io import imread
+from skimage import img_as_float
 from ela import generator
 
 import utils
-import metrics
-import datasets
 
 
-experiments = [
-    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
-]
+def ensemble_mean(p, threshold=0.5):
+    return np.mean(p, axis=0) > threshold
 
-test_predictions_experiment = []
 
-for name in experiments:
-    test_predictions = utils.TestPredictions('{}'.format(name), mode='val')
-    test_predictions_experiment.append(test_predictions.load_raw())
+def ensemble_vote(p):
+    return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
 
-samples_train = utils.get_train_samples()
-transforms = generator.TransformationsGenerator([])
-dataset = datasets.AnalysisDataset(samples_train, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
-train = {}
-for id in tqdm(samples_train):
-    _, mask, _ = dataset.get_by_id(id)
-    test_prediction = np.concatenate([predictions[id] for predictions in test_predictions_experiment], axis=0)
-    prediction = torch.mean(torch.sigmoid(torch.FloatTensor(test_prediction)), dim=0)
-    mask = torch.FloatTensor(mask)
-
-    train[id] = (prediction, mask)
+def ensemble_mean_mean(p):
+    return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
 
 
 def strip_nan(e):
     if e != e:
-        return ''
+        return None
 
     return e[:-4]
 
+# LIST OF EXPERIMENTS TO INCLUDE
+experiments = [
+    'nopoolrefinenet_seresnet50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+]
 
+# NAME OF SUBMISSION
+ensemble_name = 'nopoolrefinenet_seresnet50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels + post-processing'
+
+test_predictions_experiment = []
+
+for name in experiments:
+    test_predictions_split = []
+    n_splits = locate('experiments.' + name + '.n_splits')
+    for i in range(0, 5):
+        test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
+        test_predictions_split.append(test_predictions.load_raw())
+    test_predictions_experiment.append(test_predictions_split)
+
+samples_test = utils.get_test_samples()
+
+
+# PUT CORRECT PATH TO NEIGHBORS FILE HERE
 with open('./data/8_neighbours_mosaics.pkl', "rb") as f:
     neighbors = pickle.load(f)
     neighbors = {k[:-4]: [strip_nan(e) for e in v] for k, v in neighbors.items()}
 
-samples_test = utils.get_test_samples()
-masks_test = utils.TestPredictions('{}-split_{}'.format(name, 0)).load()
+predictions_mean = []
+for id in tqdm(samples_test, ascii=True):
+    # p = n_models x h x w
+    p = []
+    for i, test_predictions_split in enumerate(test_predictions_experiment):
+        test_predictions_split = np.stack([predictions[id] for predictions in test_predictions_split], axis=0)
+        p.append(test_predictions_split)
+
+    p = np.concatenate(p, axis=0)
+
+    prediction_ensemble = ensemble_mean(p)
+    predictions_mean.append((prediction_ensemble, id))
+
+# Save ensembled predictions (for example for pseudo-labeling)
+ensemble_predictions = utils.TestPredictions(ensemble_name)
+ensemble_predictions.add_predictions(predictions_mean)
 
 
-for sample in samples_train:
+samples_train = utils.get_train_samples()
+transforms = generator.TransformationsGenerator([])
+
+
+def get_mask(id):
+    if id in samples_train:
+        mask_n = img_as_float(imread(join('./data/train', 'masks', id) + '.png'))
+
+    if id in samples_test:
+        mask_n = ensemble_predictions[id].astype(np.float32)
+
+    return mask_n
+
+
+test_postprocessed = {test_id: get_mask(test_id) for test_id in samples_test}
+
+for sample in tqdm(samples_test, ascii=True):
     if sample in neighbors:
         sample_neighbors = neighbors[sample]
+        mask = test_postprocessed[sample]
 
-        masks_neighbors = []
-        for n in sample_neighbors:
-            if n in samples_train:
-                mask_n = train[n][0]
+        # HERE IS SOME SAMPLE CODE. PUT YOUR POST_PROCESSING HERE
+        n_top, n_left, n_right, n_bottom = sample_neighbors[1], sample_neighbors[3], sample_neighbors[4], \
+                                           sample_neighbors[6]
+        if n_top and n_left and n_right and n_bottom:
+            top = get_mask(n_top)
+            left = get_mask(n_left)
+            right = get_mask(n_right)
+            bottom = get_mask(n_bottom)
 
-            if n in samples_test:
-                mask_n = torch.FloatTensor(masks_test[n])
+            t = 0.1
+            if np.mean(np.abs(top[-1, :] - bottom[0, :])) < t:
+                mask[:, :] = top[-1, :]
 
-            masks_neighbors.append(mask_n)
+            test_postprocessed[sample] = mask
 
-        if len(masks_neighbors) == 0:
-            continue
-
-        num_neighbors = len(masks_neighbors)
-        masks_neighbors = torch.cat(masks_neighbors, dim=0)
-        mean_neighbors = torch.mean(masks_neighbors)
-
-        mask_sample, mask = train[sample]
-        if mean_neighbors > 0.8 and num_neighbors > 4 and torch.mean(mask_sample) < 0.01:
-            mask_sample[:, :] = 1
-            train[sample] = mask_sample, mask
-            print("AS")
+        # END SAMPLE CODE
 
 
-predictions = [prediction for id, (prediction, mask) in train.items()]
-predictions = torch.stack(predictions, dim=0).cuda()
-masks = [mask for id, (prediction, mask) in train.items()]
-masks = torch.stack(masks, dim=0).cuda()
+predictions = [prediction for id, prediction in test_postprocessed.items()]
+predictions = np.stack(predictions, axis=0)
+predictions = (predictions > 0.5).astype(np.float32)
 
-predictions = (predictions > 0.5).float()
+# Threshold for submission
+submission = utils.Submission(ensemble_name)
+submission.add_samples(predictions, samples_test)
+submission.save()
 
-map = metrics.mAP(predictions, masks)
-
-print('mAP', map)
