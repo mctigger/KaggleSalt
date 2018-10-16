@@ -49,13 +49,9 @@ for name in experiments:
         test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)
 
+samples_train = utils.get_train_samples()
 samples_test = utils.get_test_samples()
 
-
-# PUT CORRECT PATH TO NEIGHBORS FILE HERE
-with open('./data/8_neighbours_mosaics.pkl', "rb") as f:
-    neighbors = pickle.load(f)
-    neighbors = {k[:-4]: [strip_nan(e) for e in v] for k, v in neighbors.items()}
 
 predictions_mean = []
 for id in tqdm(samples_test, ascii=True):
@@ -75,10 +71,6 @@ ensemble_predictions = utils.TestPredictions(ensemble_name)
 ensemble_predictions.add_predictions(predictions_mean)
 
 
-samples_train = utils.get_train_samples()
-transforms = generator.TransformationsGenerator([])
-
-
 def get_mask(id):
     if id in samples_train:
         mask_n = img_as_float(imread(join('./data/train', 'masks', id) + '.png'))
@@ -89,8 +81,12 @@ def get_mask(id):
     return mask_n
 
 
-test_postprocessed = {test_id: get_mask(test_id) for test_id in samples_test}
+# PUT CORRECT PATH TO NEIGHBORS FILE HERE
+with open('./data/8_neighbours_mosaics.pkl', "rb") as f:
+    neighbors = pickle.load(f)
+    neighbors = {k[:-4]: [strip_nan(e) for e in v] for k, v in neighbors.items()}
 
+test_postprocessed = {test_id: get_mask(test_id) for test_id in samples_test}
 for sample in tqdm(samples_test, ascii=True):
     if sample in neighbors:
         sample_neighbors = neighbors[sample]
@@ -105,9 +101,13 @@ for sample in tqdm(samples_test, ascii=True):
             right = get_mask(n_right)
             bottom = get_mask(n_bottom)
 
-            t = 0.1
-            if np.mean(np.abs(top[-1, :] - bottom[0, :])) < t:
-                mask[:, :] = top[-1, :]
+            t = 0.5
+            if np.mean(np.abs(top[-1, :] - bottom[0, :])) < t and np.mean(top[-1, :]) > 0.1 and np.mean(
+                    bottom[0, :]) > 0.1:
+                if n_top in samples_train:
+                    mask[:, :] = np.clip(mask[:, :] + top[-1, :], 0, 1)
+                else:
+                    mask[:, :] = np.clip(mask[:, :] + bottom[0, :], 0, 1)
 
             test_postprocessed[sample] = mask
 

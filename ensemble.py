@@ -6,8 +6,8 @@ from tqdm import tqdm
 import utils
 
 
-def ensemble_mean(p, threshold=0.5):
-    return np.mean(p, axis=0) > threshold
+def ensemble_mean(p):
+    return np.mean(p, axis=0)
 
 
 def ensemble_vote(p):
@@ -19,16 +19,10 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
-    'nopoolrefinenet_dpn98_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
-    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
-    'nopoolrefinenet_dpn107_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
     'nopoolrefinenet_seresnet50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
-    'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
-    'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
-    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels_mosaic',
 ]
 
-ensemble_name = 'best_7'
+ensemble_name = 'nopoolrefinenet_seresnet50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels'
 
 test_predictions_experiment = []
 
