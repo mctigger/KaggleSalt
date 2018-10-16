@@ -9,16 +9,17 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import SmallOCRefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.refinenet import SmallOCRefineNetUpsampleClassifier
 from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
-from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnet50
+from nets.backbones import NoPoolDPN92Base
+from nets.encoders.dpn import dpn92
 from metrics import iou, mAP
 import datasets
 import utils
 import meters
 import losses
 import tta
+
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
 
@@ -31,10 +32,11 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
-            SCSENoPoolResNextBase(se_resnet50()),
+            NoPoolDPN92Base(dpn92()),
             num_features=128,
-            classifier=lambda c: SmallOCRefineNetUpsampleClassifier(2*c, scale_factor=2),
-            block=SCSERefineNetBlock
+            block_multiplier=1,
+            num_features_base=[256 + 80, 512 + 192, 1024 + 528, 2048 + 640],
+            classifier=lambda c: SmallOCRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
         )
         self.tta = [
             tta.Pipeline([tta.Pad((13, 14, 13, 14))]),
@@ -91,7 +93,7 @@ class Model:
 
         epochs = 200
         optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
-        lr_scheduler = utils.PolyLR(optimizer, 51, 0.9, steps={
+        lr_scheduler = utils.PolyLR(optimizer, 50, 0.9, steps={
             0: 1e-2,
             50: 0.5 * 1e-2,
             100: 0.5 * 0.5 * 1e-2,
@@ -164,7 +166,7 @@ class Model:
 
         average_meter_train = meters.AverageMeter()
 
-        with tqdm(total=len(dataloader), leave=False, ascii=True) as pbar, torch.enable_grad():
+        with tqdm(total=len(dataloader), leave=False) as pbar, torch.enable_grad():
             net.train()
 
             padding = tta.Pad((13, 14, 13, 14))
@@ -201,7 +203,7 @@ class Model:
 
         average_meter_val = meters.AverageMeter()
 
-        with tqdm(total=len(dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
+        with tqdm(total=len(dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, masks_targets in dataloader:
@@ -234,7 +236,7 @@ class Model:
             batch_size=32
         )
 
-        with tqdm(total=len(test_dataloader), leave=True, ascii=True) as pbar, torch.no_grad():
+        with tqdm(total=len(test_dataloader), leave=True) as pbar, torch.no_grad():
             net.eval()
 
             for images, ids in test_dataloader:

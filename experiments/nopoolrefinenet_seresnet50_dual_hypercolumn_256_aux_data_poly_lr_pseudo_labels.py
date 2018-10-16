@@ -32,7 +32,7 @@ class Model:
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
             SCSENoPoolResNextBase(se_resnet50()),
-            num_features=128,
+            num_features=256,
             classifier=lambda c: SmallOCRefineNetUpsampleClassifier(2*c, scale_factor=2),
             block=SCSERefineNetBlock
         )

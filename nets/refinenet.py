@@ -3,7 +3,7 @@ from torch import nn
 from torchvision.models.resnet import BasicBlock, Bottleneck, conv3x3
 
 from nets.encoders.senet import SEModule, SEResNetBottleneck, SEResNeXtBottleneck
-from nets.modules import CAM_Module, PAM_Module, SCSEBlock, ModifiedSCSEModule, DualSCSEModule, BaseOC_Context_Module, SelfAttentionBlock2D, PreActivationBasicBlock, PreActivationBottleneckBlock, SpatialAttentionModule, DistanceAttentionModule
+from nets.modules import CAM_Module, PAM_Module, SCSEBlock, ModifiedSCSEModule, DualSCSEModule, BaseOC_Context_Module, ASP_OC_Module, PreActivationBasicBlock, PreActivationBottleneckBlock, SpatialAttentionModule, DistanceAttentionModule
 
 
 def conv_3x3(in_channels, out_channels, bias=False):
@@ -539,6 +539,24 @@ class DistanceRefineNetUpsampleClassifier(nn.Module):
         x = self.upsample(x)
 
         return x
+
+
+class SmallOCRefineNetUpsampleClassifier(nn.Module):
+    def __init__(self, channels, scale_factor=4, rcu=RCU, dropout=0):
+        super(SmallOCRefineNetUpsampleClassifier, self).__init__()
+
+        self.classifier = nn.Sequential(*[
+            ASP_OC_Module(rcu.multiplier * channels, rcu.multiplier * channels),
+            conv_3x3(rcu.multiplier * channels, rcu.multiplier * channels),
+            nn.BatchNorm2d(rcu.multiplier * channels),
+            nn.ReLU(),
+            nn.Dropout2d(dropout),
+            nn.Conv2d(rcu.multiplier * channels, 1, kernel_size=1, bias=True),
+            nn.Upsample(scale_factor=scale_factor, mode='bilinear')
+        ])
+
+    def forward(self, x):
+        return self.classifier(x)
 
 
 class OCRefineNetUpsampleClassifier(nn.Module):

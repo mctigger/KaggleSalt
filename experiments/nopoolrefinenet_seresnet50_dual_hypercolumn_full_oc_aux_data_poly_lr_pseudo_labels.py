@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from ela import transformations, generator, random
 
-from nets.refinenet import SmallOCRefineNetUpsampleClassifier, SCSERefineNetBlock
+from nets.refinenet import SmallOCRefineNetUpsampleClassifier, OC, SCSERefineNetBlock
 from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
 from nets.backbones import SCSENoPoolResNextBase
 from nets.encoders.senet import se_resnet50
@@ -33,6 +33,7 @@ class Model:
         self.net = DualHypercolumnCatRefineNet(
             SCSENoPoolResNextBase(se_resnet50()),
             num_features=128,
+            crp=OC,
             classifier=lambda c: SmallOCRefineNetUpsampleClassifier(2*c, scale_factor=2),
             block=SCSERefineNetBlock
         )
