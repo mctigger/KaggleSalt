@@ -102,14 +102,18 @@ for sample in tqdm(samples_test, ascii=True):
             bottom = get_mask(n_bottom)
 
             t = 0.5
-            if np.mean(np.abs(top[-1, :] - bottom[0, :])) < t and np.mean(top[-1, :]) > 0.1 and np.mean(
-                    bottom[0, :]) > 0.1:
+            if np.mean(np.abs(top[-1, :] - bottom[0, :])) < t and np.mean(top[-1, :] > 0.5) > 0.1 and np.mean(
+                    bottom[0, :] > 0.5) > 0.1:
                 if n_top in samples_train:
                     mask[:, :] = np.clip(mask[:, :] + top[-1, :], 0, 1)
-                else:
+                if n_bottom in samples_train:
                     mask[:, :] = np.clip(mask[:, :] + bottom[0, :], 0, 1)
 
-            test_postprocessed[sample] = mask
+            t = 0.2
+            if np.mean(np.abs(top[-1, :] - bottom[0, :])) < t and np.mean(top[-1, :] > 0.5) > 0.1 and np.mean(
+                    bottom[0, :] > 0.5) > 0.1:
+                mask[:, :] = np.clip(mask[:, :] + top[-1, :], 0, 1)
+                mask[:, :] = np.clip(mask[:, :] + bottom[0, :], 0, 1)
 
         # END SAMPLE CODE
 
