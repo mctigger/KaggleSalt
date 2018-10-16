@@ -29,6 +29,8 @@ experiments = [
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
 
+output = 'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels_ensemble'
+
 test_predictions_experiment = []
 
 for name in experiments:
@@ -42,29 +44,35 @@ transforms = generator.TransformationsGenerator([])
 dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
 split_map = []
-for train, val in utils.mask_stratified_k_fold(5):
-    predictions = []
-    masks = []
-    with tqdm(total=len(val), leave=False) as pbar:
-        for id in val:
-            _, mask, _ = dataset.get_by_id(id)
-            test_prediction = np.concatenate([predictions[id] for predictions in test_predictions_experiment], axis=0)
-            prediction = torch.FloatTensor(test_prediction)
-            mask = torch.FloatTensor(mask)
+val = utils.get_train_samples()
+predictions = []
+masks = []
 
-            predictions.append(prediction)
-            masks.append(mask)
+with tqdm(total=len(val), leave=False) as pbar:
+    for id in val:
+        _, mask, _ = dataset.get_by_id(id)
+        test_prediction = np.concatenate([predictions[id] for predictions in test_predictions_experiment], axis=0)
+        prediction = torch.FloatTensor(test_prediction)
+        mask = torch.FloatTensor(mask)
 
-    predictions = torch.stack(predictions, dim=0).cuda()
-    masks = torch.stack(masks, dim=0).cuda()
+        predictions.append(prediction)
+        masks.append(mask)
 
-    predictions = torch.sigmoid(predictions)
-    predictions = torch.mean(predictions, dim=1)
-    predictions = (predictions > 0.5).float()
+predictions = torch.stack(predictions, dim=0).cuda()
+masks = torch.stack(masks, dim=0).cuda()
 
-    print(predictions.size())
+predictions = torch.sigmoid(predictions)
+predictions = torch.mean(predictions, dim=1)
 
-    map = metrics.mAP(predictions, masks)
-    split_map.append(map)
+test_predictions = utils.TestPredictions(output, mode='val')
+test_predictions.add_predictions(zip(predictions.cpu().numpy(), train_samples))
+test_predictions.save()
+
+predictions = (predictions > 0.5).float()
+
+print(predictions.size())
+
+map = metrics.mAP(predictions, masks)
+split_map.append(map)
 
 print(np.mean(split_map), split_map)
