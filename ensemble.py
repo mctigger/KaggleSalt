@@ -27,14 +27,14 @@ experiments = [
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
 
-ensemble_name = 'ensemble-top-6-test'
+ensemble_name = 'ensemble-top-6-test-split_4'
 
 test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
     n_splits = locate('experiments.' + name + '.n_splits')
-    for i in range(0, 5):
+    for i in range(4, 5):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)
