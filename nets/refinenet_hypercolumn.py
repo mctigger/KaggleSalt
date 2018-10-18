@@ -91,6 +91,53 @@ class DualHypercolumnCatRefineNet(RefineNet):
         return x
 
 
+class BoundaryDualHypercolumnCatRefineNet(RefineNet):
+    def __init__(
+            self,
+            encoder,
+            num_features=None,
+            num_features_base=None,
+            block_multiplier=4,
+            crp=CRP,
+            rcu=RCU,
+            mrf=MrF,
+            mask_classifier=RefineNetUpsampleClassifier,
+            boundary_classifier=RefineNetUpsampleClassifier,
+            block=RefineNetBlock
+    ):
+        super(BoundaryDualHypercolumnCatRefineNet, self).__init__(
+            encoder,
+            num_features,
+            num_features_base,
+            block_multiplier,
+            crp,
+            rcu,
+            mrf,
+            mask_classifier,
+            block)
+
+        self.boundary_classifier = boundary_classifier
+
+    def forward(self, x):
+        x_0, x_1, x_2, x_3 = self.encoder(x)
+
+        r_0 = self.refine_0([x_3])
+        r_1 = self.refine_1([x_2, r_0])
+        r_2 = self.refine_2([x_1, r_1])
+        r_3 = self.refine_3([x_0, r_2])
+
+        hypercolumn = torch.cat([
+            F.interpolate(r_1, scale_factor=4, mode='bilinear'),
+            r_3
+        ], dim=1)
+
+        mask = self.classifier(hypercolumn)
+        boundary = self.boundary_classifier(hypercolumn)
+
+        return mask, boundary
+
+
+
 class AuxHypercolumnCatRefineNet(RefineNet):
     def __init__(
             self,

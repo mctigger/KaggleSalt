@@ -266,12 +266,13 @@ def main():
 
         print("Running split {}".format(i))
         model = Model(name, i)
+        """
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
+        """
 
         # Load the best performing checkpoint
         model.load()
-
         # Do a final validation
         model.validate(DataParallel(model.net), samples_val, -1)
 
@@ -280,7 +281,7 @@ def main():
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
 
-    experiment_logger.save()
+    #experiment_logger.save()
 
 
 if __name__ == "__main__":

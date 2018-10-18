@@ -11,9 +11,9 @@ from tqdm import tqdm
 from ela import transformations, generator, random
 
 from nets.refinenet import SmallDropoutRefineNetUpsampleClassifier, SCSERefineNetBlock
-from nets.refinenet_hypercolumn import DualHypercolumnCatRefineNet
+from nets.refinenet_hypercolumn import BoundaryDualHypercolumnCatRefineNet
 from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnext101_32x4d
+from nets.encoders.senet import se_resnext50_32x4d
 from metrics import iou, mAP
 import datasets
 import utils
@@ -31,10 +31,11 @@ class Model:
         self.name = name
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
-        self.net = DualHypercolumnCatRefineNet(
-            SCSENoPoolResNextBase(se_resnext101_32x4d()),
+        self.net = BoundaryDualHypercolumnCatRefineNet(
+            SCSENoPoolResNextBase(se_resnext50_32x4d()),
             num_features=128,
-            classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
+            mask_classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
+            boundary_classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
             block=SCSERefineNetBlock
         )
         self.tta = [
@@ -67,7 +68,7 @@ class Model:
     def predict_raw(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions, _ = net(tta.transform_forward(images))
             masks_predictions = tta.transform_backward(masks_predictions)
             tta_masks.append(masks_predictions)
 
@@ -78,7 +79,7 @@ class Model:
     def predict(self, net, images):
         tta_masks = []
         for tta in self.tta:
-            masks_predictions = net(tta.transform_forward(images))
+            masks_predictions, _ = net(tta.transform_forward(images))
             masks_predictions = torch.sigmoid(tta.transform_backward(masks_predictions))
             tta_masks.append(masks_predictions)
 
@@ -141,9 +142,9 @@ class Model:
         ])
 
         samples_aux = list(set(samples).intersection(set(utils.get_aux_samples())))
-        dataset_aux = datasets.ImageDataset(samples_aux, './data/train', transforms)
+        dataset_aux = datasets.BoundaryImageDataset(samples_aux, './data/train', transforms)
 
-        dataset_pseudo = datasets.SemiSupervisedImageDataset(
+        dataset_pseudo = datasets.BoundarySemiSupervisedImageDataset(
             samples_test,
             './data/test',
             transforms,
@@ -152,7 +153,7 @@ class Model:
             momentum=0.0
         )
 
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataset = datasets.BoundaryImageDataset(samples, './data/train', transforms)
         weight_train = len(dataset_pseudo) / len(dataset) * 2
         weight_aux = weight_train / 2
         weights = [weight_train] * len(dataset) + [weight_aux] * len(dataset_aux) + [1] * len(dataset_pseudo)
@@ -169,12 +170,15 @@ class Model:
             net.train()
 
             padding = tta.Pad((13, 14, 13, 14))
+            criterion_boundary = losses.BCEWithLogitsLoss()
 
-            for images, masks_targets in dataloader:
+            for images, masks_targets, boundary_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
-                masks_predictions = padding.transform_backward(net(padding.transform_forward(images))).contiguous()
+                masks_predictions, boundary_predictions = net(padding.transform_forward(images))
+                masks_predictions = padding.transform_backward(masks_predictions)
+                boundary_predictions = padding.transform_backward(boundary_predictions)
 
-                loss = criterion(masks_predictions, masks_targets)
+                loss = 0.2 * criterion(masks_predictions, masks_targets) + criterion_boundary(boundary_predictions, boundary_targets)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -266,11 +270,9 @@ def main():
 
         print("Running split {}".format(i))
         model = Model(name, i)
-        """
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
 
-        """
         # Load the best performing checkpoint
         model.load()
 
@@ -282,7 +284,7 @@ def main():
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
 
-    #experiment_logger.save()
+    experiment_logger.save()
 
 
 if __name__ == "__main__":
