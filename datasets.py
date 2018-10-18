@@ -82,9 +82,9 @@ class BoundaryImageDataset(Dataset):
 
         mask = img_as_float(imread(join(self.path, 'masks', id) + '.png'))
         mask = t(mask)
+        boundary = find_boundaries(mask, mode='thick').astype(np.float32)
         mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
 
-        boundary = find_boundaries(mask, mode='thick')
         boundary = torch.tensor(boundary, dtype=torch.float).unsqueeze(0)
 
         if self.semisupervised_marker:
@@ -285,9 +285,9 @@ class BoundarySemiSupervisedImageDataset(Dataset):
 
         mask = self.mask_predictions[id] > 0.5
         mask = t(mask)
+        boundary = find_boundaries(mask, mode='thick').astype(np.float32)
         mask = torch.tensor(mask, dtype=torch.float).unsqueeze(0)
 
-        boundary = find_boundaries(mask, mode='thick')
         boundary = torch.tensor(boundary, dtype=torch.float).unsqueeze(0)
 
         if self.semisupervised_marker:

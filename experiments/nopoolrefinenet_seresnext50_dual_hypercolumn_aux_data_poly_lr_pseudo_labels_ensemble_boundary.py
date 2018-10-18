@@ -174,9 +174,11 @@ class Model:
 
             for images, masks_targets, boundary_targets in dataloader:
                 masks_targets = masks_targets.to(gpu)
+                boundary_targets = boundary_targets.to(gpu)
+
                 masks_predictions, boundary_predictions = net(padding.transform_forward(images))
-                masks_predictions = padding.transform_backward(masks_predictions)
-                boundary_predictions = padding.transform_backward(boundary_predictions)
+                masks_predictions = padding.transform_backward(masks_predictions).contiguous()
+                boundary_predictions = padding.transform_backward(boundary_predictions).contiguous()
 
                 loss = 0.2 * criterion(masks_predictions, masks_targets) + criterion_boundary(boundary_predictions, boundary_targets)
                 loss.backward()

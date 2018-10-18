@@ -116,7 +116,7 @@ class BoundaryDualHypercolumnCatRefineNet(RefineNet):
             mask_classifier,
             block)
 
-        self.boundary_classifier = boundary_classifier
+        self.boundary_classifier = boundary_classifier(None)
 
     def forward(self, x):
         x_0, x_1, x_2, x_3 = self.encoder(x)

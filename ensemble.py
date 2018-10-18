@@ -19,22 +19,26 @@ def ensemble_mean_mean(p):
 
 
 experiments = [
+    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
     'nopoolrefinenet_dpn98_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
     'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_senet154_dual_hypercolumn_aux_data_poly_lr_pseudo_labels'
     'nopoolrefinenet_dpn107_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
+    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels_ensemble'
     'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble'
     'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
 
-ensemble_name = 'ensemble-top-6-test-split_4'
+ensemble_name = 'ensemble-top-10-test'
 
 test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
     n_splits = locate('experiments.' + name + '.n_splits')
-    for i in range(4, 5):
+    for i in range(5):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)
