@@ -83,4 +83,4 @@ best = fmin(
 )
 
 print(best)
-print(run_evaluation(best.values()))
+print(run_evaluation(list(best.values())))
