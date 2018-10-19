@@ -65,7 +65,7 @@ def run_evaluation(weights):
 
     print(map.item())
 
-    return {'loss': map.item(), 'status': STATUS_OK}
+    return {'loss': 1 - map.item(), 'status': STATUS_OK}
 
 
 weights_uniform = [1 / len(experiments)]*len(experiments)
