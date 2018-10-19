@@ -4,6 +4,7 @@ import torch
 
 from scipy import optimize
 from ela import generator
+from hyperopt import fmin, tpe, hp
 
 import utils
 import metrics
@@ -11,16 +12,8 @@ import datasets
 
 
 experiments = [
-    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
-    'nopoolrefinenet_dpn98_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
-    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
-    'nopoolrefinenet_senet154_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
-    'nopoolrefinenet_dpn107_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
-    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels_ensemble',
-    'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
-    'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
-    'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
+    'nopoolrefinenet_seresnext101_ndadam_scse_block_pseudo_labels'
 ]
 
 output = False
@@ -63,25 +56,21 @@ def run_evaluation(weights):
 
     map = metrics.mAP(predictions, masks)
 
-    print(map.item())
+    print(map)
 
-    return 1 - map.item()
+    return 1 - map
 
 
 mAP_mean = run_evaluation([1 / len(experiments)]*len(experiments))
 print('Uniform weight mAP: ', mAP_mean)
 
-bounds = [(0, 1)] * len(experiments)
-constraints = ({'type': 'eq', 'fun': lambda w: 1-sum(w)})
-res = optimize.minimize(
-    run_evaluation,
-    np.array([1 / len(experiments)] * len(experiments)),
-    bounds=bounds,
-    constraints=constraints,
-    method='Powell',
-    options={
-        'maxfev': 50,
-    }
+best = fmin(
+    fn=run_evaluation(),
+    space= hp.choice('classifier_type', [
+
+    ]),
+    algo=tpe.suggest,
+    max_evals=100
 )
 
-print(res)
+print(best)
