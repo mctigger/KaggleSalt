@@ -44,7 +44,7 @@ def run_evaluation(weights):
     predictions = []
     masks = []
 
-    for id in tqdm(val, leave=False):
+    for id in tqdm(val, leave=False, ascii=True):
         _, mask, _ = dataset.get_by_id(id)
         prediction = torch.stack([torch.mean(torch.sigmoid(torch.FloatTensor(predictions[id])), dim=0) for predictions in test_predictions_experiment], dim=0)
         mask = torch.FloatTensor(mask)
