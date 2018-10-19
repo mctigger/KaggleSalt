@@ -51,7 +51,8 @@ predictions_mean = []
 for id in tqdm(test_samples, ascii=True):
     # p = n_models x h x w
     p = []
-    for i, (w, test_predictions_split) in enumerate(zip(weights, test_predictions_experiment)):
+    for i, test_predictions_split in enumerate(test_predictions_experiment):
+        w = weights[i]
         test_predictions_split = np.stack([predictions[id]*w for predictions in test_predictions_split], axis=0)
         p.append(test_predictions_split)
 
