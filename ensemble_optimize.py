@@ -22,6 +22,7 @@ experiments = [
     'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
+
 output = False
 
 test_predictions_experiment = []
@@ -36,33 +37,29 @@ train_samples = utils.get_train_samples()
 transforms = generator.TransformationsGenerator([])
 dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
+split_map = []
+val = utils.get_train_samples()
+predictions = []
+masks = []
+
+for id in tqdm(val, leave=False, ascii=True):
+    _, mask, _ = dataset.get_by_id(id)
+    prediction = torch.stack([torch.mean(torch.sigmoid(torch.FloatTensor(predictions[id])), dim=0) for predictions in
+                              test_predictions_experiment], dim=0)
+    mask = torch.FloatTensor(mask)
+
+    predictions.append(prediction)
+    masks.append(mask)
+
+predictions_in = torch.stack(predictions, dim=0).cuda()
+masks = torch.stack(masks, dim=0).cuda()
+
 
 def run_evaluation(weights):
     weights_sum = np.sum(weights)
-    split_map = []
-    val = utils.get_train_samples()
-    predictions = []
-    masks = []
 
-    for id in tqdm(val, leave=False, ascii=True):
-        _, mask, _ = dataset.get_by_id(id)
-        prediction = torch.stack([torch.mean(torch.sigmoid(torch.FloatTensor(predictions[id])), dim=0) for predictions in test_predictions_experiment], dim=0)
-        mask = torch.FloatTensor(mask)
-
-        predictions.append(prediction)
-        masks.append(mask)
-
-    predictions = torch.stack(predictions, dim=0).cuda()
-    masks = torch.stack(masks, dim=0).cuda()
-
-    predictions = predictions * (torch.FloatTensor(weights) / float(weights_sum)).cuda().unsqueeze(0).unsqueeze(2).unsqueeze(2).expand_as(predictions)
+    predictions = predictions_in * (torch.FloatTensor(weights) / float(weights_sum)).cuda().unsqueeze(0).unsqueeze(2).unsqueeze(2).expand_as(predictions_in)
     predictions = torch.sum(predictions, dim=1)
-
-    if output:
-        ensemble_predictions = utils.TestPredictions(output, mode='val')
-        ensemble_predictions.add_predictions(zip(predictions.cpu().numpy(), train_samples))
-        ensemble_predictions.save()
-
     predictions = (predictions > 0.5).float()
 
     map = metrics.mAP(predictions, masks)
