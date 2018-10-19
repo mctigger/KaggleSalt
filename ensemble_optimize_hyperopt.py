@@ -83,5 +83,5 @@ best = fmin(
 )
 
 print(best)
-print(list(best.values()))
+print([best['w{}'.format(i)] for i in range(10)])
 print(run_evaluation([best['w{}'.format(i)] for i in range(10)]))
