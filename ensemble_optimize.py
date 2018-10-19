@@ -2,27 +2,12 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
+from scipy import optimize
 from ela import generator
 
 import utils
 import metrics
 import datasets
-
-
-def ensemble_mean(p, threshold=0.5):
-    return np.mean(np.mean(p, axis=0) > threshold, axis=0)
-
-
-def ensemble_vote(p):
-    return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
-
-
-def ensemble_mean_mean(p):
-    return np.mean(sigmoid(p.reshape(-1, *p.shape[2:])), axis=0)
-
-
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
 
 
 experiments = [
@@ -51,36 +36,57 @@ train_samples = utils.get_train_samples()
 transforms = generator.TransformationsGenerator([])
 dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
-split_map = []
-val = utils.get_train_samples()
-predictions = []
-masks = []
 
-with tqdm(total=len(val), leave=False) as pbar:
-    for id in val:
+def run_evaluation(weights):
+    weights_sum = np.sum(weights)
+    split_map = []
+    val = utils.get_train_samples()
+    predictions = []
+    masks = []
+
+    for id in tqdm(val, leave=False):
         _, mask, _ = dataset.get_by_id(id)
-        test_prediction = np.concatenate([predictions[id] for predictions in test_predictions_experiment], axis=0)
-        prediction = torch.FloatTensor(test_prediction)
+        prediction = torch.stack([torch.mean(torch.sigmoid(torch.FloatTensor(predictions[id])), dim=0) for predictions in test_predictions_experiment], dim=0)
         mask = torch.FloatTensor(mask)
 
         predictions.append(prediction)
         masks.append(mask)
 
-predictions = torch.stack(predictions, dim=0).cuda()
-masks = torch.stack(masks, dim=0).cuda()
+    predictions = torch.stack(predictions, dim=0).cuda()
+    masks = torch.stack(masks, dim=0).cuda()
 
-predictions = torch.sigmoid(predictions)
-predictions = torch.mean(predictions, dim=1)
+    predictions = predictions * (torch.FloatTensor(weights) / float(weights_sum)).cuda().unsqueeze(0).unsqueeze(2).unsqueeze(2).expand_as(predictions)
+    predictions = torch.sum(predictions, dim=1)
 
-test_predictions = utils.TestPredictions(output, mode='val')
-test_predictions.add_predictions(zip(predictions.cpu().numpy(), train_samples))
+    if output:
+        ensemble_predictions = utils.TestPredictions(output, mode='val')
+        ensemble_predictions.add_predictions(zip(predictions.cpu().numpy(), train_samples))
+        ensemble_predictions.save()
 
-if output:
-    test_predictions.save()
+    predictions = (predictions > 0.5).float()
 
-predictions = (predictions > 0.5).float()
+    map = metrics.mAP(predictions, masks)
+    split_map.append(map)
 
-map = metrics.mAP(predictions, masks)
-split_map.append(map)
+    print(map, weights)
 
-print(np.mean(split_map), split_map)
+    return 1 - np.mean(split_map)
+
+
+mAP_mean = run_evaluation([1 / len(experiments)]*len(experiments))
+print('Uniform weight mAP: ', mAP_mean)
+
+bounds = [(0, 1)] * len(experiments)
+constraints = ({'type': 'eq', 'fun': lambda w: 1-sum(w)})
+res = optimize.minimize(
+    run_evaluation,
+    np.array([1 / len(experiments)] * len(experiments)),
+    bounds=bounds,
+    constraints=constraints,
+    method='Powell',
+    options={
+        'maxfev': 50,
+    }
+)
+
+print(res)

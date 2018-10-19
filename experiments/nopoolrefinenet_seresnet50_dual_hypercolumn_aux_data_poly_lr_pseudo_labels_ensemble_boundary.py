@@ -13,7 +13,7 @@ from ela import transformations, generator, random
 from nets.refinenet import SmallDropoutRefineNetUpsampleClassifier, SCSERefineNetBlock
 from nets.refinenet_hypercolumn import BoundaryDualHypercolumnCatRefineNet
 from nets.backbones import SCSENoPoolResNextBase
-from nets.encoders.senet import se_resnext50_32x4d
+from nets.encoders.senet import se_resnet50
 from metrics import iou, mAP
 import datasets
 import utils
@@ -32,7 +32,7 @@ class Model:
         self.split = split
         self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
         self.net = BoundaryDualHypercolumnCatRefineNet(
-            SCSENoPoolResNextBase(se_resnext50_32x4d()),
+            SCSENoPoolResNextBase(se_resnet50()),
             num_features=128,
             mask_classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
             boundary_classifier=lambda c: SmallDropoutRefineNetUpsampleClassifier(2 * 128, scale_factor=2),
