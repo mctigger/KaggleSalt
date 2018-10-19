@@ -37,7 +37,6 @@ train_samples = utils.get_train_samples()
 transforms = generator.TransformationsGenerator([])
 dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
-split_map = []
 val = utils.get_train_samples()
 predictions = []
 masks = []
@@ -63,11 +62,10 @@ def run_evaluation(weights):
     predictions = (predictions > 0.5).float()
 
     map = metrics.mAP(predictions, masks)
-    split_map.append(map)
 
-    print(map, weights)
+    print(map)
 
-    return 1 - np.mean(split_map)
+    return 1 - map
 
 
 mAP_mean = run_evaluation([1 / len(experiments)]*len(experiments))
