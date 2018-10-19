@@ -64,25 +64,37 @@ def run_evaluation(weights):
 
     map = metrics.mAP(predictions, masks)
 
-    print(map.item())
-
     return {'loss': 1 - map.item(), 'status': STATUS_OK}
+
+
+def optimize():
+    space_weights = [hp.uniform('w{}'.format(i), 0, 1) for i in range(len(experiments))]
+    trials = Trials()
+    best = fmin(
+        fn=run_evaluation,
+        space=space_weights,
+        algo=tpe.suggest,
+        max_evals=500,
+        trials=trials
+    )
+
+    #print(best)
+    #print([best['w{}'.format(i)] for i in range(len(experiments))])
+    #print(run_evaluation([best['w{}'.format(i)] for i in range(len(experiments))]))
+
+    return [best['w{}'.format(i)] for i in range(len(experiments))]
 
 
 weights_uniform = [1 / len(experiments)]*len(experiments)
 mAP_mean = run_evaluation(weights_uniform)
 print('Uniform weight mAP: ', mAP_mean)
 
-space_weights = [hp.uniform('w{}'.format(i), 0, 1) for i in range(len(experiments))]
-trials = Trials()
-best = fmin(
-    fn=run_evaluation,
-    space=space_weights,
-    algo=tpe.suggest,
-    max_evals=200,
-    trials=trials
-)
 
-print(best)
-print([best['w{}'.format(i)] for i in range(len(experiments))])
-print(run_evaluation([best['w{}'.format(i)] for i in range(len(experiments))]))
+best_weights = []
+for i in range(10):
+    best_weights.append(optimize())
+
+print(best_weights)
+best_weights_mean = np.mean(np.array(best_weights), axis=0)
+print(best_weights_mean)
+print(run_evaluation(best_weights_mean))
