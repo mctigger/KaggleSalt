@@ -24,6 +24,7 @@ experiments = [
     'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
+
 output = False
 
 test_predictions_experiment = []
