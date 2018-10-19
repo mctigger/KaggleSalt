@@ -33,13 +33,13 @@ experiments = [
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
 
-ensemble_name = 'ensemble-top-12-test'
+ensemble_name = 'ensemble-top-12-test-weighted'
+weights = [0.20825407, 0.75518098, 0.73788061, 0.12476653, 0.12492937, 0.77131858, 0.42370022, 0.62843662, 0.08514515, 0.61333554, 0.57577217, 0.80513217]
 
 test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
-    n_splits = locate('experiments.' + name + '.n_splits')
     for i in range(5):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
@@ -52,7 +52,7 @@ for id in tqdm(test_samples, ascii=True):
     # p = n_models x h x w
     p = []
     for i, test_predictions_split in enumerate(test_predictions_experiment):
-        test_predictions_split = np.stack([predictions[id] for predictions in test_predictions_split], axis=0)
+        test_predictions_split = np.stack([predictions[id]*w for predictions, w in zip(test_predictions_split, weights)], axis=0)
         p.append(test_predictions_split)
 
     p = np.concatenate(p, axis=0)
