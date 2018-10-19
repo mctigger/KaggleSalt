@@ -34,7 +34,7 @@ for name in experiments:
     test_predictions = utils.TestPredictions('{}'.format(name), mode='test')
     test_predictions_experiment.append(test_predictions.load_raw())
 
-sampels_test = utils.get_test_samples()
+samples_test = utils.get_test_samples()
 
 
 transforms = generator.TransformationsGenerator([])
@@ -57,7 +57,7 @@ def run(weights):
     predictions = (predictions > 0.5).float()
 
     test_predictions = utils.TestPredictions(ensemble_name, mode='test')
-    test_predictions.add_predictions(zip(predictions.cpu().numpy(), sampels_test))
+    test_predictions.add_predictions(zip(predictions.cpu().numpy(), samples_test))
     test_predictions.save()
 
 

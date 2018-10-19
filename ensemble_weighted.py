@@ -52,6 +52,7 @@ for id in tqdm(test_samples, ascii=True):
     # p = n_models x h x w
     p = []
     for i, test_predictions_split in enumerate(test_predictions_experiment):
+        print(i)
         test_predictions_split = np.stack([predictions[id]*w for predictions, w in zip(test_predictions_split, weights)], axis=0)
         p.append(test_predictions_split)
 
