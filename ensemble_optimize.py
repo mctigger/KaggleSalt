@@ -20,6 +20,7 @@ experiments = [
     'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
     'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
     'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
 
@@ -80,7 +81,7 @@ res = optimize.minimize(
     constraints=constraints,
     method='Powell',
     options={
-        'maxfev': 50,
+        'maxfev': 200,
     }
 )
 

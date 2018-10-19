@@ -4,7 +4,7 @@ import torch
 
 from scipy import optimize
 from ela import generator
-from hyperopt import fmin, tpe, hp
+from hyperopt import fmin, tpe, hp, STATUS_OK
 
 import utils
 import metrics
@@ -12,10 +12,18 @@ import datasets
 
 
 experiments = [
+    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
+    'nopoolrefinenet_dpn98_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
+    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_senet154_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_dpn107_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
+    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels_ensemble',
+    'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
+    'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
     'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
-    'nopoolrefinenet_seresnext101_ndadam_scse_block_pseudo_labels'
 ]
-
 output = False
 
 test_predictions_experiment = []
@@ -56,19 +64,20 @@ def run_evaluation(weights):
 
     map = metrics.mAP(predictions, masks)
 
-    print(map)
+    print(map.item())
 
-    return 1 - map
+    return {'loss': 1 - map.item(), 'status': STATUS_OK}
 
 
-mAP_mean = run_evaluation([1 / len(experiments)]*len(experiments))
+weights_uniform = [1 / len(experiments)]*len(experiments)
+mAP_mean = run_evaluation(weights_uniform)
 print('Uniform weight mAP: ', mAP_mean)
 
-best = fmin(
-    fn=run_evaluation(),
-    space= hp.choice('classifier_type', [
+space_weights = [hp.uniform('w{}'.format(i), 0, 1) for i in range(len(experiments))]
 
-    ]),
+best = fmin(
+    fn=run_evaluation,
+    space=space_weights,
     algo=tpe.suggest,
     max_evals=100
 )
