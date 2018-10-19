@@ -2,9 +2,8 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from scipy import optimize
 from ela import generator
-from hyperopt import fmin, tpe, hp, STATUS_OK
+from hyperopt import fmin, tpe, hp, STATUS_OK, Trials
 
 import utils
 import metrics
@@ -74,12 +73,14 @@ mAP_mean = run_evaluation(weights_uniform)
 print('Uniform weight mAP: ', mAP_mean)
 
 space_weights = [hp.uniform('w{}'.format(i), 0, 1) for i in range(len(experiments))]
-
+trials = Trials()
 best = fmin(
     fn=run_evaluation,
     space=space_weights,
     algo=tpe.suggest,
-    max_evals=100
+    max_evals=200,
+    trials=trials
 )
 
 print(best)
+print(run_evaluation(best.values()))
