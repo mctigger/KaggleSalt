@@ -57,7 +57,7 @@ for id in tqdm(test_samples, ascii=True):
 
     p = np.concatenate(p, axis=0)
 
-    print(p.size())
+    print(p.shape)
 
     prediction_ensemble = ensemble_mean(p)
     predictions_mean.append((prediction_ensemble, id))
