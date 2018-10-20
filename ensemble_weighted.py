@@ -42,7 +42,7 @@ for name in experiments:
     test_predictions_split = []
     for i in range(5):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
-        test_predictions_split.append(test_predictions.load_raw())
+        test_predictions_split.append(test_predictions.load())
     test_predictions_experiment.append(test_predictions_split)
 
 test_samples = utils.get_test_samples()
@@ -55,7 +55,7 @@ for id in tqdm(test_samples, ascii=True):
         test_predictions_split = np.stack([predictions[id] for predictions in test_predictions_split], axis=0)
         p.append(test_predictions_split)
 
-    p = np.concatenate(p, axis=0)
+    p = np.stack(p, axis=0)
 
     print(p.shape)
 
