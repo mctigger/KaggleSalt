@@ -6,18 +6,6 @@ from tqdm import tqdm
 import utils
 
 
-def ensemble_mean(p):
-    return np.mean(p, axis=0)
-
-
-def ensemble_vote(p):
-    return np.mean((p > 0.5).reshape(-1, *p.shape[2:]), axis=0)
-
-
-def ensemble_mean_mean(p):
-    return np.mean((p).reshape(-1, *p.shape[2:]), axis=0)
-
-
 experiments = [
     'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels_ensemble',
     'nopoolrefinenet_dpn98_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
@@ -39,7 +27,6 @@ test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
-    n_splits = locate('experiments.' + name + '.n_splits')
     for i in range(5):
         test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
@@ -57,7 +44,7 @@ for id in tqdm(test_samples, ascii=True):
 
     p = np.concatenate(p, axis=0)
 
-    prediction_ensemble = ensemble_mean(p)
+    prediction_ensemble = np.mean(p, axis=0)
     predictions_mean.append((prediction_ensemble, id))
 
 # Save ensembled predictions (for example for pseudo-labeling)
