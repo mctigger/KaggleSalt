@@ -256,21 +256,13 @@ def main():
     name = str(file_name)
 
     experiment_logger = utils.ExperimentLogger(name)
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('split')
-    args = parser.parse_args()
-
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
-        if i != int(args.split):
-            continue
-
         print("Running split {}".format(i))
         model = Model(name, i)
-        """
+
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
-        """
+
 
         # Load the best performing checkpoint
         model.load()
@@ -282,7 +274,7 @@ def main():
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
 
-    #experiment_logger.save()
+    experiment_logger.save()
 
 
 if __name__ == "__main__":

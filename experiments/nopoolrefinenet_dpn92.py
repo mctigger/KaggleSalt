@@ -96,7 +96,7 @@ class Model:
             160: (1e-5, 1e-6),
         })
 
-        epochs = 1
+        epochs = 200
 
         best_val_mAP = 0
         best_stats = None

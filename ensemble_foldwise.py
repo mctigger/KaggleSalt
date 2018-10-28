@@ -5,17 +5,23 @@ import utils
 
 
 experiments = [
-    'ensemble'
+    'nopoolrefinenet_dpn98_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
+    'nopoolrefinenet_seresnext101_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_dpn107_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
+    'nopoolrefinenet_seresnext50_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_seresnet152_dual_hypercolumn_aux_data_poly_lr_pseudo_labels',
+    'nopoolrefinenet_dpn92_dual_hypercolumn_poly_lr_aux_data_pseudo_labels',
 ]
 
-ensemble_name = 'test'
+ensemble_name = 'ensemble'
 
 
 for i in range(5):
+    print('Processing fold {}'.format(i))
     test_predictions_experiment = []
     for name in experiments:
         test_predictions_split = []
-        test_predictions = utils.TestPredictions('{}-{}'.format(name, i))
+        test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
         test_predictions_split.append(test_predictions.load_raw())
         test_predictions_experiment.append(test_predictions_split)
 
@@ -25,7 +31,7 @@ for i in range(5):
     for id in tqdm(test_samples, ascii=True):
         # p = n_models x h x w
         p = []
-        for i, test_predictions_split in enumerate(test_predictions_experiment):
+        for test_predictions_split in test_predictions_experiment:
             test_predictions_split = np.stack([predictions[id] for predictions in test_predictions_split], axis=0)
             p.append(test_predictions_split)
 

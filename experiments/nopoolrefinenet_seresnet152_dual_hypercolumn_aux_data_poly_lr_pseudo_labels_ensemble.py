@@ -257,14 +257,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('split')
-    args = parser.parse_args()
-
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
-        if i != int(args.split):
-            continue
-
         print("Running split {}".format(i))
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)

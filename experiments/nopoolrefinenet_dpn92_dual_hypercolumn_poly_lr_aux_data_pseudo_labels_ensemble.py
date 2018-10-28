@@ -45,7 +45,7 @@ class Model:
             tta.Pipeline([tta.Pad((13, 14, 13, 14)), tta.Flip()])
         ]
 
-        self.test_predictions = utils.TestPredictions('ensemble_top_6_postprocessed-split_{}'.format(split)).load()
+        self.test_predictions = utils.TestPredictions('ensemble-{}'.format(split)).load()
 
     def save(self):
         pathlib.Path(self.path).mkdir(parents=True, exist_ok=True)
@@ -93,7 +93,7 @@ class Model:
     def fit(self, samples_train, samples_val):
         net = DataParallel(self.net)
 
-        epochs = 200
+        epochs = 1
         optimizer = SGD(net.parameters(), lr=1e-2, weight_decay=1e-4, momentum=0.9, nesterov=True)
         lr_scheduler = utils.PolyLR(optimizer, 50, 0.9, steps={
             0: 1e-2,
@@ -259,20 +259,12 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('split')
-    args = parser.parse_args()
-
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold()):
-        if i != int(args.split):
-            continue
-
         print("Running split {}".format(i))
         model = Model(name, i)
-        """
         stats = model.fit(samples_train, samples_val)
         experiment_logger.set_split(i, stats)
-        """
+
         # Load the best performing checkpoint
         model.load()
 
@@ -284,7 +276,7 @@ def main():
         test_predictions.add_predictions(model.test(utils.get_test_samples()))
         test_predictions.save()
 
-    #experiment_logger.save()
+    experiment_logger.save()
 
 
 if __name__ == "__main__":

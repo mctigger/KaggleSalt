@@ -77,12 +77,12 @@ experiments = [
 ensemble_name = 'ensemble'
 ```
 
-Run `ensemble_fold.py` with this config to generate predictions which are then loaded in subsequent models.
+Run `ensemble_foldwise.py` with this config to generate predictions which are then loaded in subsequent models.
 
 ## 2. First-round semi-supervised ensemble
 Now we just repeat this process, but with new models which are dependent on the ensemble we created before and additionally depend on the small mask dataset.
 For the specified models change the parameter `self.test_predictions=...` to `self.test_predictions = utils.TestPredictions('ensemble-{}'.format(split)).load()`
-So first train these models and then run `ensemble_fold.py` with the given config.
+So first train these models and then run `ensemble_foldwise.py` with the given config.
 
 ```
 experiments = [
