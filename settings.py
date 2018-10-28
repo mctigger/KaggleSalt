@@ -1,0 +1,6 @@
+checkpoints = './checkpoints'
+train = './data/train'
+test = './data/test'
+submissions = './submissions'
+predictions = './predictions'
+experiments = './experiments'

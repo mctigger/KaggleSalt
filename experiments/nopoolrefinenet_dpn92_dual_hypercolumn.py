@@ -19,6 +19,7 @@ import utils
 import meters
 import losses
 import tta
+import settings
 
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
@@ -28,7 +29,7 @@ class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
-        self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
+        self.path = os.path.join(settings.checkpoints, name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
             NoPoolDPN92Base(dpn92()),
             num_features=128,
@@ -137,7 +138,7 @@ class Model:
             )
         ])
 
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataset = datasets.ImageDataset(samples, settings.train, transforms)
         dataloader = DataLoader(
             dataset,
             num_workers=10,
@@ -175,7 +176,7 @@ class Model:
 
     def validate(self, net, samples, e):
         transforms = generator.TransformationsGenerator([])
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataset = datasets.ImageDataset(samples, settings.train, transforms)
         dataloader = DataLoader(
             dataset,
             num_workers=10,
@@ -202,7 +203,7 @@ class Model:
         val_stats = {'val_' + k: v for k, v in average_meter_val.get_all().items()}
         return val_stats
 
-    def test(self, samples_test, dir_test='./data/test', predict=None):
+    def test(self, samples_test, dir_test=settings.test, predict=None):
         if predict is None:
             predict = self.predict
 

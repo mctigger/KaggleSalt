@@ -7,6 +7,7 @@ from ela import generator
 import utils
 import metrics
 import datasets
+import settings
 
 
 def ensemble_mean(p, threshold=0.5):
@@ -51,7 +52,7 @@ train_samples = utils.get_train_samples()
 
 
 transforms = generator.TransformationsGenerator([])
-dataset = datasets.AnalysisDataset(train_samples, './data/train', transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
+dataset = datasets.AnalysisDataset(train_samples, settings.train, transforms, utils.TestPredictions('{}'.format(name), mode='val').load())
 
 split_map = []
 val = utils.get_train_samples()

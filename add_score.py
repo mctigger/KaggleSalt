@@ -2,6 +2,7 @@ import argparse
 import pandas as pd
 
 import utils
+import settings
 
 parser = argparse.ArgumentParser(description='Validate a experiment with different test time augmentations.')
 parser.add_argument('name', help='Use one of the experiment names here excluding the .py ending.')

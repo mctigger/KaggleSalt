@@ -2,6 +2,7 @@ import argparse
 from pydoc import locate
 
 import utils
+import settings
 
 parser = argparse.ArgumentParser(description='Predict validation for a experiment.')
 parser.add_argument('name', help='Use one of the experiment names here excluding the .py ending.')
@@ -19,6 +20,6 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(5)
     model.load()
 
     # Predict the test data
-    test_predictions.add_predictions(model.test(samples_val, dir_test='./data/train', predict=model.predict_raw))
+    test_predictions.add_predictions(model.test(samples_val, dir_test=settings.train, predict=model.predict_raw))
 
 test_predictions.save()

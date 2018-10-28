@@ -17,6 +17,7 @@ from tqdm import tqdm
 
 import meters
 import metrics
+import settings
 
 
 pd.options.display.float_format = '{:,.4f}'.format
@@ -145,7 +146,7 @@ class Submission:
             self.samples[id] = rle
 
     def save(self):
-        with open(os.path.join('./submissions', self.name), 'w', newline='') as csvfile:
+        with open(os.path.join(settings.submissions, self.name), 'w', newline='') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=['id', 'rle_mask'])
             writer.writerow({'id': 'id', 'rle_mask': 'rle_mask'})
 
@@ -154,7 +155,7 @@ class Submission:
 
 
 class TestPredictions:
-    def __init__(self, name, mode='test', dir='./predictions'):
+    def __init__(self, name, mode='test', dir=settings.predictions):
         self.name = name
         self.mode = mode
         self.predictions = {}

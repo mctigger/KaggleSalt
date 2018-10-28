@@ -19,6 +19,7 @@ import utils
 import meters
 import losses
 import tta
+import settings
 
 cpu = torch.device('cpu')
 gpu = torch.device('cuda')
@@ -30,7 +31,7 @@ class Model:
     def __init__(self, name, split):
         self.name = name
         self.split = split
-        self.path = os.path.join('./checkpoints', name + '-split_{}'.format(split))
+        self.path = os.path.join(settings.checkpoints, name + '-split_{}'.format(split))
         self.net = DualHypercolumnCatRefineNet(
             NoPoolDPN92Base(dpn92()),
             num_features=128,
@@ -143,7 +144,7 @@ class Model:
         ])
 
         samples_aux = list(set(samples).intersection(set(utils.get_aux_samples())))
-        dataset_aux = datasets.ImageDataset(samples_aux, './data/train', transforms)
+        dataset_aux = datasets.ImageDataset(samples_aux, settings.train, transforms)
 
         transforms_mosaic = generator.TransformationsGenerator([
             random.RandomCrop(128)
@@ -156,14 +157,14 @@ class Model:
 
         dataset_pseudo = datasets.SemiSupervisedImageDataset(
             samples_test,
-            './data/test',
+            settings.test,
             transforms,
             size=len(samples_test),
             test_predictions=self.test_predictions,
             momentum=0.0
         )
 
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataset = datasets.ImageDataset(samples, settings.train, transforms)
         weight_train = len(dataset_pseudo) / len(dataset) * 2
         weight_mosaic = weight_train
         weight_aux = weight_train / 2
@@ -206,7 +207,7 @@ class Model:
 
     def validate(self, net, samples, e):
         transforms = generator.TransformationsGenerator([])
-        dataset = datasets.ImageDataset(samples, './data/train', transforms)
+        dataset = datasets.ImageDataset(samples, settings.train, transforms)
         dataloader = DataLoader(
             dataset,
             num_workers=10,
@@ -233,7 +234,7 @@ class Model:
         val_stats = {'val_' + k: v for k, v in average_meter_val.get_all().items()}
         return val_stats
 
-    def test(self, samples_test, dir_test='./data/test', predict=None):
+    def test(self, samples_test, dir_test=settings.test, predict=None):
         if predict is None:
             predict = self.predict
 

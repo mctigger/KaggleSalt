@@ -9,6 +9,7 @@ from skimage.io import imread
 from skimage import img_as_float
 from skimage.segmentation import find_boundaries
 
+import settings
 
 class ImageDataset(Dataset):
     def __init__(self, samples, path, transforms, transforms_image=None, test=False, semisupervised_marker=False):
