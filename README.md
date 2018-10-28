@@ -3,9 +3,9 @@ Hello!
 Below you can find a outline of how to reproduce our solution for the TGS Salt Identification competition.
 If you run into any trouble with the setup/code or have any questions please contact us at tim.joseph@mctigger.com
 
-#ARCHIVE CONTENTS (TODO)
+# ARCHIVE CONTENTS (TODO)
 
-#HARDWARE: (The following specs were used to create the original solution)
+# HARDWARE: (The following specs were used to create the original solution)
 3x:
 Ubuntu 16.04 LTS (512 GB boot disk)
 16GB RAM
@@ -16,17 +16,17 @@ Ubuntu 16.04 LTS (512 GB boot disk)
 256GB RAM
 4x NVIDIA Tesla P100
 
-#SOFTWARE (python packages are detailed separately in `environment.yml`):
+# SOFTWARE (python packages are detailed separately in `environment.yml`):
 Anaconda 5.3, Python 3.6, NVIDIA drivers 410.66
 
 (CUDA and cuDNN are not listed here since these are part of the Pytorch conda package, see `environment.yml`)
 
-#DATA SETUP 
+# DATA SETUP 
 Download and extract competition data into `./data`.
 
-#DATA PROCESSING
+# DATA PROCESSING
 
-#General model building
+# General model building
 test prediction = Model predictions for the test data. Contains a predicted mask for each test sample with values between 0 and 1.
 
 submission = File which contains a mask for each test samples with values which are either 0 or 1.
