@@ -1,16 +1,17 @@
 import argparse
 from pydoc import locate
 
-from torch.nn import DataParallel
-
 import utils
 
 parser = argparse.ArgumentParser(description='Validate a experiment with different test time augmentations.')
 parser.add_argument('name', help='Use one of the experiment names here excluding the .py ending.')
-parser.add_argument('--top-n', default=10, type=int)
+parser.add_argument('test_set', help='Specify the path to the new test_set')
+parser.add_argument('output_dir', help='Specify the path to the output dir for the test-predictions.')
 args = parser.parse_args()
 
 name = args.name
+test_set = args.test_set
+output_dir = args.output_dir
 
 experiment_logger = utils.ExperimentLogger(name, mode='val')
 
@@ -22,11 +23,7 @@ for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold())
     # Load the best performing checkpoint
     model.load()
 
-    # Validate
-    stats_train = model.validate(DataParallel(model.net).cuda(), samples_train, -1)
-    stats_val = model.validate(DataParallel(model.net).cuda(), samples_val, -1)
-    stats = {**stats_train, **stats_val}
-    experiment_logger.set_split(i, stats)
-
-experiment_logger.print()
-experiment_logger.save()
+    # Predict the test data
+    test_predictions = utils.TestPredictions(name + '-split_{}'.format(i), mode=output_dir)
+    test_predictions.add_predictions(model.test(utils.get_test_samples(test_set)))
+    test_predictions.save()

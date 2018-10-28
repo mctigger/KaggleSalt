@@ -5,7 +5,6 @@ import utils
 
 parser = argparse.ArgumentParser(description='Predict validation for a experiment.')
 parser.add_argument('name', help='Use one of the experiment names here excluding the .py ending.')
-parser.add_argument('--top-n', default=10, type=int)
 args = parser.parse_args()
 
 name = args.name

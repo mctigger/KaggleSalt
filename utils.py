@@ -38,8 +38,8 @@ def get_mosaic_samples():
     return np.array([path[:-4] for path in os.listdir('./data/mosaic_pairs/images')])
 
 
-def get_test_samples():
-    return np.array([path[:-4] for path in os.listdir('./data/test/images')])
+def get_test_samples(path_images='./data/test/images'):
+    return np.array([path[:-4] for path in os.listdir(path_images)])
 
 
 def get_train_samples_sorted():

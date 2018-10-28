@@ -22,13 +22,14 @@ experiments = [
 ]
 
 ensemble_name = 'ensemble-top-12-test'
+input_dir = 'test'
 
 test_predictions_experiment = []
 
 for name in experiments:
     test_predictions_split = []
     for i in range(5):
-        test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i))
+        test_predictions = utils.TestPredictions('{}-split_{}'.format(name, i), mode=input_dir)
         test_predictions_split.append(test_predictions.load_raw())
     test_predictions_experiment.append(test_predictions_split)
 

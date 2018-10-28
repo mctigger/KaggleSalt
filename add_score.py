@@ -12,7 +12,6 @@ name = args.name
 experiment_logger = utils.ExperimentLogger(name)
 
 for i in range(5):
-
     df_split = pd.read_csv('logs/epochs/{}-split_{}'.format(name, i), delim_whitespace=True, index_col=0)
     split = df_split.as_matrix(columns=['train_loss', 'train_iou', 'train_mAP', 'val_iou', 'val_mAP'])
     best = split[split[:, 3].argsort()][-1]
