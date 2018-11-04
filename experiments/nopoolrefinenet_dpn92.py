@@ -239,6 +239,7 @@ def main():
 
     experiment_logger = utils.ExperimentLogger(name)
 
+    # If you only want to train a simple model, only run the first loop
     for i, (samples_train, samples_val) in enumerate(utils.mask_stratified_k_fold(n_splits)):
         model = Model(name, i)
         stats = model.fit(samples_train, samples_val)

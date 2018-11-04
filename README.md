@@ -122,3 +122,48 @@ ensemble_name = 'ensemble-top-12-test'
 ```
 
 In `./submissions` there should be a file called `ensemble-top-12-test` now which can be submitted to the leaderboard.
+
+
+# Using a simple model
+Using a single simple model is done similiarly to creating our final submission.
+
+## 1. Training the model and creating predictions
+For a simple single model we recommend using `experiments/nopoolrefinenet_dpn92.py`. Now for training put your data into the train folder just like specified in the directoy structure.
+To run the most simple model (so no cross-validation) only run the first iteration of the loop at the bottom of the experiment file. This is equivalent to running only the first fold of 5-fold cross-validation.
+You can even lower the number of epochs to run for faster training. It should only give slightly worse results the running the full training. 
+
+Here is an example configuration which only takes 1/4 of the original training duration:
+```
+lr_scheduler = utils.CyclicLR(optimizer, 5, {
+    0: (1e-4, 1e-6),
+    25: (0.5e-4, 1e-6),
+    40: (1e-5, 1e-6),
+})
+
+epochs = 50
+```
+
+Put your test data into the specified test-directory before training. The predictions for this data will created after training automatically.
+This can be changed in the loop at the bottom at the file. Changing this is trivial and should only need a look at the code as explanation.
+
+Now run `CUDA_VISIBLE_DEVICES=0 python -m experiments.nopoolrefinenet_dpn92` to start training.
+
+## 2. Creating a submission
+In `ensemble.py` only include the simple model like this:
+
+```
+experiments = [
+    'nopoolrefinenet_dpn92'
+]
+```
+
+Also specify the ensemble name.
+
+Change the first loop from 5 iterations to 1:
+```
+for i in range(1):
+```
+
+Run `python ensemble.py`.
+
+Now a valid submission should have been created in `./submissions`.
