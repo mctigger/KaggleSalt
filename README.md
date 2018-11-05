@@ -124,6 +124,15 @@ ensemble_name = 'ensemble-top-12-test'
 In `./submissions` there should be a file called `ensemble-top-12-test` now which can be submitted to the leaderboard.
 
 
+## 4. Postprocessing 
+
+To start working on postprocessing you need to build mosaics from train and test images. This can be done using `salt-jigsaw-puzzle.ipynb` notebook - just create `mosaics` folder in the root and run all cells in the notebook. After that you will see saved mosaics in the `mosaics` folder.
+
+The second part is running all cells in `postprocessing.ipynb` notebook - it takes as input mosaics and predictions for validation and test (the files could be changed in variables `test_preds` and `val_pred`). In the end of this notebook you can see Kaggle submit file generation. 
+
+This postprocessing was pretty useful on Public LB, but does almost nothing in Private LB.
+
+
 # Using a simple model
 Using a single simple model is done similiarly to creating our final submission.
 
