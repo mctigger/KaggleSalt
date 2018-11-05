@@ -25,6 +25,7 @@ Anaconda 5.3, Python 3.6, NVIDIA drivers 410.66
 Download and extract competition data into `./data`.
 
 # DATA PROCESSING
+Download small_mask auxilary data into `./data/auxiliary_small` like explained here https://www.kaggle.com/c/tgs-salt-identification-challenge/discussion/65500 or use their official repository to generate it: https://github.com/neptune-ml/open-solution-salt-identification
 
 # General model building
 test prediction = Model predictions for the test data. Contains a predicted mask for each test sample with values between 0 and 1.
