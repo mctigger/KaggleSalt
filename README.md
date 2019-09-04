@@ -1,9 +1,6 @@
 Hello!
 
-Below you can find a outline of how to reproduce our solution for the TGS Salt Identification competition.
-If you run into any trouble with the setup/code or have any questions please contact us at tim.joseph@mctigger.com
-
-# ARCHIVE CONTENTS (TODO)
+Below you can find a outline of how to reproduce our solution for the TGS Salt Identification competition https://www.kaggle.com/c/tgs-salt-identification-challenge/overview.
 
 # HARDWARE: (The following specs were used to create the original solution)
 3x:
